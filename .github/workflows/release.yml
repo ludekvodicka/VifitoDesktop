@@ -1,0 +1,109 @@
+name: Release build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0; reads the pnpm version from package.json "packageManager"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate version
+        run: pnpm run release:check
+
+      - name: Check source
+        run: pnpm run check
+
+      - name: Package ${{ matrix.platform }} (unsigned)
+        run: pnpm run package:${{ matrix.platform }}
+        env:
+          # Signing seam: replace this with platform signing/notarization credentials in a dedicated change.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Validate updater feed
+        if: matrix.platform != 'mac'
+        run: pnpm run release:smoke ${{ matrix.platform }} release
+
+      - name: Upload native artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vifito-desktop-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
+            release/*.blockmap
+          if-no-files-found: error
+
+  release:
+    name: create draft GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: artifacts
+
+      - name: Compute checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' \) | sort | while read -r file; do
+            printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$(basename "$file")"
+          done > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Assemble unsigned-build notes
+        run: |
+          {
+            echo '### Verify your download'
+            echo
+            echo 'These builds are unsigned. Check the SHA256 of your download before running it.'
+            echo
+            echo '```'
+            cat artifacts/SHA256SUMS.txt
+            echo '```'
+            echo
+            echo 'Windows Setup and the Linux packages update from published GitHub Releases. Windows Portable and the unsigned macOS build update manually.'
+          } > release-notes.md
+
+      - name: Create draft Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          draft: true
+          body_path: release-notes.md
+          files: artifacts/**/*

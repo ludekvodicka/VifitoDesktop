@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a focused improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Writing to the FTMS Control Point (starting the belt, changing the incline) is out of scope by design, see the README.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Privacy and platform impact
+      description: Explain any change to what is stored on disk, what leaves the machine, or which platforms are supported.

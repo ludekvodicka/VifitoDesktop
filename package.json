@@ -1,0 +1,58 @@
+{
+  "name": "vifito-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop app that reads live data from a VIFITO Rio 45 iR treadmill over Bluetooth FTMS",
+  "author": {
+    "name": "ludekvodicka",
+    "email": "3900551+ludekvodicka@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ludekvodicka/VifitoDesktop.git"
+  },
+  "homepage": "https://github.com/ludekvodicka/VifitoDesktop#readme",
+  "bugs": {
+    "url": "https://github.com/ludekvodicka/VifitoDesktop/issues"
+  },
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm run release:check && pnpm run third-party:check && pnpm run typecheck && pnpm test && pnpm run build",
+    "version:set": "node scripts/set-version.mjs",
+    "release:check": "node scripts/check-release-version.mjs",
+    "release:smoke": "node scripts/smoke-release-artifacts.mjs",
+    "third-party:check": "node scripts/generate-third-party.mjs --check",
+    "third-party:write": "node scripts/generate-third-party.mjs --write",
+    "package": "pnpm run build && electron-builder --config electron-builder.yml --publish never",
+    "package:win": "pnpm run build && electron-builder --win --config electron-builder.yml --publish never",
+    "package:mac": "pnpm run build && electron-builder --mac --config electron-builder.yml --publish never",
+    "package:linux": "pnpm run build && electron-builder --linux --config electron-builder.yml --publish never",
+    "package:dir": "pnpm run build && electron-builder --dir --config electron-builder.yml --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@types/web-bluetooth": "0.0.21",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "typescript": "6.0.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.10"
+  },
+  "packageManager": "pnpm@11.17.0"
+}

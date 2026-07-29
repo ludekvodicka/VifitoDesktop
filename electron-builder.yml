@@ -1,0 +1,60 @@
+appId: dev.vifito.desktop
+productName: Vifito Desktop
+copyright: Copyright © 2026 Vifito Desktop contributors
+asar: true
+# No native dependencies, so electron-builder needs no node-gyp toolchain on the CI runners.
+npmRebuild: false
+directories:
+  output: release
+  buildResources: buildResources
+# Whitelist: the build output and the manifest only. Walking logs live outside the app directory
+# and can never end up in an installer.
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: README.md
+    to: README.md
+  - from: LICENSE
+    to: LICENSE
+  - from: THIRD-PARTY.md
+    to: THIRD-PARTY.md
+publish:
+  - provider: github
+    owner: ludekvodicka
+    repo: VifitoDesktop
+win:
+  icon: buildResources/icon.png
+  target:
+    - nsis
+    - portable
+# Artifact names are hyphenated on purpose: electron-updater resolves the feed path as a URL, and a
+# space in the file name breaks the download. productName keeps the readable form for the UI.
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: "Vifito-Desktop-Setup-${version}-${arch}.${ext}"
+portable:
+  artifactName: "Vifito-Desktop-Portable-${version}-${arch}.${ext}"
+mac:
+  icon: buildResources/icon.png
+  category: public.app-category.healthcare-fitness
+  identity: null
+  # Without this key macOS denies Bluetooth without even showing a prompt.
+  extendInfo:
+    NSBluetoothAlwaysUsageDescription: Vifito Desktop reads live workout data from your treadmill console over Bluetooth.
+  target:
+    - dmg
+dmg:
+  artifactName: "Vifito-Desktop-${version}-${arch}.${ext}"
+linux:
+  icon: buildResources/icon.png
+  category: Utility
+  executableName: vifito-desktop
+  target:
+    - AppImage
+    - deb
+appImage:
+  artifactName: "Vifito-Desktop-${version}-${arch}.${ext}"
+deb:
+  artifactName: "Vifito-Desktop-${version}-${arch}.${ext}"

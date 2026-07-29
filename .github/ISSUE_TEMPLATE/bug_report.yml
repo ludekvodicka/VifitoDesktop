@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible Vifito Desktop problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not post workout logs, device addresses, or vulnerability details. Use private vulnerability reporting for security issues.
+  - type: input
+    id: version
+    attributes:
+      label: Vifito Desktop version and package
+      placeholder: 0.1.0, Windows Setup
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: input
+    id: treadmill
+    attributes:
+      label: Treadmill and console
+      description: Model, and the firmware name the console advertises if you know it.
+      placeholder: VIFITO Rio 45 iR, console advertises as FS-XXXXXX
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: frames
+    attributes:
+      label: Raw frames from the Diagnostics tab
+      description: For a parsing or connection problem, paste the GATT dump and the last Treadmill Data frames. Remove the device identifier.
