@@ -1,5 +1,11 @@
 # Vifito Desktop
 
+[![CI](https://github.com/ludekvodicka/VifitoDesktop/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ludekvodicka/VifitoDesktop/actions/workflows/ci.yml)
+[![Release build](https://github.com/ludekvodicka/VifitoDesktop/actions/workflows/release.yml/badge.svg)](https://github.com/ludekvodicka/VifitoDesktop/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/ludekvodicka/VifitoDesktop)](https://github.com/ludekvodicka/VifitoDesktop/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/ludekvodicka/VifitoDesktop/total)](https://github.com/ludekvodicka/VifitoDesktop/releases)
+[![License](https://img.shields.io/github/license/ludekvodicka/VifitoDesktop)](LICENSE)
+
 A small desktop app that connects to a **VIFITO Rio 45 iR** walking treadmill over Bluetooth Low
 Energy and shows what the console is doing: speed, incline, distance, time, calories and heart rate,
 plus a running total of how far you walked today. From the same screen you can set the speed and the
