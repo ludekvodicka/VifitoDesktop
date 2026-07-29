@@ -175,8 +175,8 @@ export function Capabilities({ info, dump, seenFlags, framesSeen, data }: Props)
       <div className="panel">
         <h2>Settable values (Control Point 0x2AD9)</h2>
         <div className="hint" style={{ marginBottom: 10 }}>
-          This version of the app <b>never writes</b> to the Control Point, the table is an overview of what could be
-          added.
+          The dashboard uses <b>Set Target Speed</b>, <b>Set Target Inclination</b>, <b>Start or Resume</b> and{' '}
+          <b>Stop or Pause</b>. The rest of the table is an overview of what the protocol offers.
           {controlPoint ? (
             <>
               {' '}

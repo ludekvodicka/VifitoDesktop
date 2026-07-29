@@ -13,7 +13,6 @@ export const UUID = {
 
   treadmillData: full('2acd'),
   machineFeature: full('2acc'),
-  /** Control Point. This version is read-only and never writes to it. */
   controlPoint: full('2ad9'),
   machineStatus: full('2ada'),
   trainingStatus: full('2ad3'),
@@ -47,7 +46,7 @@ const NAMES: Record<string, string> = {
   fee7: 'Vendor 0xFEE7',
   '2acc': 'Fitness Machine Feature',
   '2acd': 'Treadmill Data',
-  '2ad9': 'Control Point (unused)',
+  '2ad9': 'Control Point',
   '2ada': 'Fitness Machine Status',
   '2ad3': 'Training Status',
   '2ad4': 'Supported Speed Range',

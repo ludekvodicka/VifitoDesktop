@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const version = process.argv[2]
+// pnpm forwards a bare `--` separator to the script, npm swallows it; accept both call styles.
+const version = process.argv.slice(2).filter((argument) => argument !== '--')[0]
 if (!version || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
   console.error('usage: pnpm run version:set -- X.Y.Z')
   process.exit(2)

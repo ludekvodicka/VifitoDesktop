@@ -1,3 +1,11 @@
+import {
+  ControlOp,
+  encodeRequestControl,
+  encodeStop,
+  parseControlResponse,
+  type ControlCommand,
+  type ControlResponse,
+} from './controlPoint'
 import { parseInclinationRange, parseMachineFeature, parseSpeedRange, toHex, type MachineFeatures, type Range } from './ftms'
 import { OPTIONAL_SERVICES, UUID, uuidName } from './uuids'
 
@@ -121,7 +129,8 @@ export type NotificationHandlers = {
 
 /**
  * Subscribes to Treadmill Data and the status characteristics. Returns an unsubscribe function.
- * There is deliberately no write to the Control Point (0x2AD9), this app is read-only.
+ * Control Point writes live in openControl, not here: reading must keep working on a console that
+ * refuses to be controlled.
  */
 export async function startNotifications(
   server: BluetoothRemoteGATTServer,
@@ -172,5 +181,100 @@ export async function startNotifications(
         // the connection is already gone
       }
     }
+  }
+}
+
+export type ControlChannel = {
+  /** Resolves to null when a stop came in first and this command was dropped unsent. */
+  send: (command: ControlCommand) => Promise<ControlResponse | null>
+  stop: () => Promise<ControlResponse | null>
+  close: () => Promise<void>
+}
+
+/** A console that answers at all answers in milliseconds; anything slower is a dead command. */
+const RESPONSE_TIMEOUT_MS = 2500
+
+/**
+ * Opens the Control Point (0x2AD9), or returns null when the console has none. Control is taken
+ * lazily on the first command, never on connect: some consoles lock their own panel once a remote
+ * takes over, and merely watching the numbers must not do that.
+ */
+export async function openControl(server: BluetoothRemoteGATTServer): Promise<ControlChannel | null> {
+  const ftms = await server.getPrimaryService(UUID.fitnessMachine)
+  let point: BluetoothRemoteGATTCharacteristic
+  try {
+    point = await ftms.getCharacteristic(UUID.controlPoint)
+  } catch {
+    return null
+  }
+
+  let waiting: ((response: ControlResponse) => void) | null = null
+  const onIndication = (event: Event) => {
+    const value = (event.target as BluetoothRemoteGATTCharacteristic).value
+    if (!value) return
+    const parsed = parseControlResponse(value)
+    if (!parsed) return
+    const resolve = waiting
+    waiting = null
+    resolve?.(parsed)
+  }
+  point.addEventListener('characteristicvaluechanged', onIndication)
+  await point.startNotifications()
+
+  const write = async (command: ControlCommand): Promise<void> => {
+    if (point.properties.write) await point.writeValueWithResponse(command)
+    else await point.writeValueWithoutResponse(command)
+  }
+
+  const exchange = async (command: ControlCommand): Promise<ControlResponse> => {
+    const answered = new Promise<ControlResponse>((resolve, reject) => {
+      waiting = resolve
+      setTimeout(() => {
+        if (waiting !== resolve) return
+        waiting = null
+        reject(new Error(`No answer from the console within ${RESPONSE_TIMEOUT_MS} ms`))
+      }, RESPONSE_TIMEOUT_MS)
+    })
+    await write(command)
+    return answered
+  }
+
+  // The machine drops control on disconnect and may time it out on its own, so a refusal is not
+  // fatal: take control again and repeat the command once.
+  const exchangeHoldingControl = async (command: ControlCommand): Promise<ControlResponse> => {
+    const response = await exchange(command)
+    if (!response.notPermitted || command[0] === ControlOp.requestControl) return response
+    const taken = await exchange(encodeRequestControl())
+    if (!taken.ok) return taken
+    return exchange(command)
+  }
+
+  let queue: Promise<unknown> = Promise.resolve()
+  let generation = 0
+
+  const enqueue = (command: ControlCommand): Promise<ControlResponse | null> => {
+    const mine = generation
+    const run = queue.then(() => (mine === generation ? exchangeHoldingControl(command) : null))
+    queue = run.catch(() => undefined)
+    return run
+  }
+
+  return {
+    send: enqueue,
+    // Bumping the generation drops everything still queued, so a stop never waits behind a pile of
+    // speed changes. The one command already on the wire cannot be recalled.
+    stop: () => {
+      generation++
+      return enqueue(encodeStop())
+    },
+    close: async () => {
+      generation++
+      point.removeEventListener('characteristicvaluechanged', onIndication)
+      try {
+        await point.stopNotifications()
+      } catch {
+        // the connection is already gone
+      }
+    },
   }
 }

@@ -1,6 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DaySummary, Sample, ScannedDevice } from '../preload/index'
-import { dumpGatt, readMachineInfo, requestTreadmill, startNotifications, type MachineInfo, type ServiceDump } from './ble/connection'
+import {
+  dumpGatt,
+  openControl,
+  readMachineInfo,
+  requestTreadmill,
+  startNotifications,
+  type ControlChannel,
+  type MachineInfo,
+  type ServiceDump,
+} from './ble/connection'
+import {
+  encodeSetIncline,
+  encodeSetSpeed,
+  encodeStart,
+  quantize,
+  type ControlCommand,
+  type ControlResponse,
+} from './ble/controlPoint'
 import { mergeFrames, parseTreadmillData, type TreadmillData } from './ble/ftms'
 import { Capabilities } from './Capabilities'
 import { UUID } from './ble/uuids'
@@ -13,6 +30,16 @@ const HISTORY_POINTS = 180
 const FLUSH_MS = 5000
 const RECONNECT_ATTEMPTS = 5
 const RECONNECT_DELAY_MS = 2000
+/** A burst of clicks on +/- has to leave as one command, the Control Point takes one at a time. */
+const COMMAND_DEBOUNCE_MS = 250
+const SPEED_STEP = 0.5
+const INCLINE_STEP = 0.5
+/**
+ * How long the reported speed has to disagree with what the app believes before the big button
+ * flips. The console reports zero for a moment while it spins the belt up and keeps reporting
+ * motion while it slows down, and a button that follows every frame would flicker through both.
+ */
+const BELT_STATE_SETTLE_MS = 2500
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -90,9 +117,20 @@ export function App() {
   const [framesSeen, setFramesSeen] = useState(0)
   const [info, setInfo] = useState<MachineInfo | null>(null)
   const [today, setToday] = useState<DaySummary | null>(null)
+  const [hasControlPoint, setHasControlPoint] = useState(false)
+  const [controlMessage, setControlMessage] = useState<string | null>(null)
+  /** null means the target follows what the console reports, until the user changes it. */
+  const [targetSpeed, setTargetSpeed] = useState<number | null>(null)
+  const [targetIncline, setTargetIncline] = useState<number | null>(null)
+  /** Drives which of the two big buttons is shown, see the hysteresis effect below. */
+  const [running, setRunning] = useState(false)
 
+  const disagreeSinceRef = useRef<number | null>(null)
   const deviceRef = useRef<BluetoothDevice | null>(null)
   const stopRef = useRef<(() => Promise<void>) | null>(null)
+  const controlRef = useRef<ControlChannel | null>(null)
+  const speedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inclineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const manualRef = useRef(false)
   const bufferRef = useRef<Sample[]>([])
   /** Last merged state the tiles are built from. */
@@ -140,6 +178,75 @@ export function App() {
     setStatuses((prev) => [{ t: Date.now(), label, hex }, ...prev].slice(0, 12))
   }, [])
 
+  // Frames decide whether the belt runs, but only once they have disagreed with the app long enough.
+  // Our own start and stop set the state directly, so the button reacts to the click, not to the
+  // console catching up.
+  useEffect(() => {
+    const speed = data?.speedKmh
+    if (speed === undefined) return
+    const observed = speed > 0
+    if (observed === running) {
+      disagreeSinceRef.current = null
+      return
+    }
+    const now = Date.now()
+    if (disagreeSinceRef.current === null) disagreeSinceRef.current = now
+    else if (now - disagreeSinceRef.current >= BELT_STATE_SETTLE_MS) {
+      disagreeSinceRef.current = null
+      setRunning(observed)
+    }
+  }, [data, running])
+
+  const setBeltState = useCallback((next: boolean) => {
+    disagreeSinceRef.current = null
+    setRunning(next)
+  }, [])
+
+  const clearPendingCommands = useCallback(() => {
+    for (const timer of [speedTimerRef, inclineTimerRef]) {
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = null
+    }
+  }, [])
+
+  const runCommand = useCallback(async (command: ControlCommand): Promise<ControlResponse | null> => {
+    const channel = controlRef.current
+    if (!channel) return null
+    try {
+      const response = await channel.send(command)
+      if (response) setControlMessage(response.message)
+      return response
+    } catch (err) {
+      setControlMessage(describeError(err))
+      return null
+    }
+  }, [])
+
+  const schedule = useCallback(
+    (timer: typeof speedTimerRef, build: () => ControlCommand) => {
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(() => {
+        timer.current = null
+        void runCommand(build())
+      }, COMMAND_DEBOUNCE_MS)
+    },
+    [runCommand],
+  )
+
+  const stopBelt = useCallback(async () => {
+    clearPendingCommands()
+    setBeltState(false)
+    setTargetSpeed(null)
+    const channel = controlRef.current
+    if (!channel) return
+    try {
+      const response = await channel.stop()
+      if (response) setControlMessage(response.message)
+    } catch (err) {
+      setControlMessage(describeError(err))
+    }
+  }, [clearPendingCommands])
+
   const attach = useCallback(
     async (device: BluetoothDevice) => {
       if (!device.gatt) throw new Error('The device has no GATT server.')
@@ -155,6 +262,9 @@ export function App() {
       }
       setInfo(await readMachineInfo(server))
       stopRef.current = await startNotifications(server, { onTreadmillData, onStatus })
+      await controlRef.current?.close()
+      controlRef.current = await openControl(server)
+      setHasControlPoint(controlRef.current !== null)
       setPhase('connected')
     },
     [onStatus, onTreadmillData],
@@ -206,17 +316,57 @@ export function App() {
 
   const disconnect = useCallback(async () => {
     manualRef.current = true
+    clearPendingCommands()
     await stopRef.current?.()
     stopRef.current = null
+    await controlRef.current?.close()
+    controlRef.current = null
+    setHasControlPoint(false)
+    setBeltState(false)
+    setTargetSpeed(null)
+    setTargetIncline(null)
+    setControlMessage(null)
     deviceRef.current?.gatt?.disconnect()
     setPhase('idle')
     const batch = bufferRef.current.splice(0, bufferRef.current.length)
     if (batch.length > 0) await window.vifito.logSamples(batch).then(refreshToday)
-  }, [refreshToday])
+  }, [clearPendingCommands, refreshToday])
 
   // stable sort, the likely treadmill goes up, the rest keeps the scan order
   const sortedDevices = [...devices].sort((a, b) => Number(isLikelyTreadmill(b)) - Number(isLikelyTreadmill(a)))
   const chartMax = Math.max(2, ...history)
+
+  const shownSpeed = targetSpeed ?? data?.speedKmh ?? info?.speedRange?.min ?? 0
+  const shownIncline = targetIncline ?? data?.inclinePercent ?? info?.inclinationRange?.min ?? 0
+  const lowestSpeed = quantize(info?.speedRange?.min ?? SPEED_STEP, info?.speedRange, SPEED_STEP)
+  // Trust the reported speed when the console sends it. A console that never sends the field would
+  // otherwise hide the stop button while the belt runs, so there the app's own start decides.
+  // A console that reports no target is not necessarily unable to obey one; cheap consoles get their
+  // capability flags wrong both ways. The buttons stay live and the console's own answer decides.
+  const unannounced = (target: string) =>
+    info?.features !== undefined && !info.features.targets.includes(target)
+
+  const nudgeSpeed = (direction: number) => {
+    const next = quantize(shownSpeed + direction * SPEED_STEP, info?.speedRange, SPEED_STEP)
+    setTargetSpeed(next)
+    schedule(speedTimerRef, () => encodeSetSpeed(next))
+  }
+
+  const nudgeIncline = (direction: number) => {
+    const next = quantize(shownIncline + direction * INCLINE_STEP, info?.inclinationRange, INCLINE_STEP)
+    setTargetIncline(next)
+    schedule(inclineTimerRef, () => encodeSetIncline(next))
+  }
+
+  // The target speed goes first and the belt only starts once the console has accepted it. Starting
+  // on a refused target would run the belt at whatever speed the console still had in mind.
+  const startBelt = async () => {
+    setTargetSpeed(lowestSpeed)
+    const accepted = await runCommand(encodeSetSpeed(lowestSpeed))
+    if (!accepted?.ok) return
+    const started = await runCommand(encodeStart())
+    if (started?.ok) setBeltState(true)
+  }
 
   const dotClass = phase === 'connected' ? 'connected' : phase === 'idle' ? (error ? 'error' : '') : 'working'
   const statusText =
@@ -314,6 +464,68 @@ export function App() {
               <Tile label="Heart rate" value={data?.heartRateBpm ? String(data.heartRateBpm) : '-'} unit="bpm" />
             </div>
 
+            {phase === 'connected' && (
+              <div className="panel">
+                <h2 className="row">
+                  <span>Control</span>
+                  {controlMessage && <span className="note">{controlMessage}</span>}
+                </h2>
+
+                {!hasControlPoint ? (
+                  <div className="hint">
+                    The console exposes no Control Point (0x2AD9), so it cannot be driven from here. Speed and incline
+                    stay on the console itself.
+                  </div>
+                ) : (
+                  <>
+                    <div className="control-row">
+                      <span className="control-label">Speed</span>
+                      <button onClick={() => nudgeSpeed(-1)}>−</button>
+                      <span className="control-value">
+                        {shownSpeed.toFixed(1)}
+                        <span className="unit">km/h</span>
+                      </span>
+                      <button onClick={() => nudgeSpeed(1)}>+</button>
+                      <span className="control-note">
+                        steps of {SPEED_STEP}
+                        {info?.speedRange
+                          ? `, range ${info.speedRange.min.toFixed(1)} - ${info.speedRange.max.toFixed(1)}`
+                          : ', range unknown'}
+                        {unannounced('Speed Target') && ', not advertised by the console'}
+                      </span>
+                    </div>
+
+                    <div className="control-row">
+                      <span className="control-label">Incline</span>
+                      <button onClick={() => nudgeIncline(-1)}>−</button>
+                      <span className="control-value">
+                        {shownIncline.toFixed(1)}
+                        <span className="unit">%</span>
+                      </span>
+                      <button onClick={() => nudgeIncline(1)}>+</button>
+                      <span className="control-note">
+                        steps of {INCLINE_STEP}
+                        {info?.inclinationRange
+                          ? `, range ${info.inclinationRange.min.toFixed(1)} - ${info.inclinationRange.max.toFixed(1)}`
+                          : ', range unknown'}
+                        {unannounced('Inclination Target') && ', not advertised by the console'}
+                      </span>
+                    </div>
+
+                    {running ? (
+                      <button className="big stop" onClick={() => void stopBelt()}>
+                        STOP
+                      </button>
+                    ) : (
+                      <button className="big primary" onClick={() => void startBelt()}>
+                        START AT {lowestSpeed.toFixed(1)} KM/H
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="panel">
               <h2 className="row">
                 <span>Speed over time</span>
@@ -339,8 +551,8 @@ export function App() {
                 <h2>How to start</h2>
                 <div className="hint">
                   Switch the treadmill console on, disconnect the mobile app (BLE holds a single connection) and click
-                  Connect treadmill. This app only reads, it never writes to the treadmill, so it cannot start the belt
-                  or change the incline.
+                  Connect treadmill. Once connected you can set speed and incline from here, and stop the belt. Whether
+                  the console accepts any of that is up to its firmware, and it answers every command.
                 </div>
               </div>
             )}
@@ -367,7 +579,7 @@ export function App() {
                   )) ?? <span className="hint">none</span>}
                 </div>
                 <div className="hint" style={{ marginBottom: 6 }}>
-                  What the console would allow setting (information only, this app never writes):
+                  What the console says it allows setting:
                 </div>
                 <div style={{ marginBottom: 8 }}>
                   {info.features?.targets.length ? (

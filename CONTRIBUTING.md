@@ -28,8 +28,9 @@ Diagnostics tab.
 - Keep each pull request focused and explain the user-visible behavior.
 - Add or update parser tests when you change frame decoding, using captured hex frames.
 - Never commit workout logs, device identifiers, or local machine paths.
-- Do not add a write path to the FTMS Control Point (0x2AD9). Reading is the whole scope of this app;
-  starting a belt from software is a safety decision, not a feature toggle.
+- Keep the safety rules around Control Point writes: no command without a user action, Start only at
+  the lowest speed and only once the console has accepted it, Stop ahead of anything queued and never
+  behind a confirmation. A change that weakens any of these needs a stated reason.
 
 The maintainer's internal source of truth is SVN and GitHub is a reviewed public projection. After a
 PR merges, the maintainer backports it into the internal tree before the next public sync.

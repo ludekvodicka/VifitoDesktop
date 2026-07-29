@@ -152,7 +152,7 @@ const TARGET_BITS = [
 
 export type MachineFeatures = {
   features: string[]
-  /** What the console would allow setting over the Control Point. Read and displayed only. */
+  /** What the console says it allows setting over the Control Point. */
   targets: string[]
   hex: string
 }

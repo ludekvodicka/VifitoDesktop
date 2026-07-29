@@ -2,20 +2,35 @@
 
 A small desktop app that connects to a **VIFITO Rio 45 iR** walking treadmill over Bluetooth Low
 Energy and shows what the console is doing: speed, incline, distance, time, calories and heart rate,
-plus a running total of how far you walked today.
+plus a running total of how far you walked today. From the same screen you can set the speed and the
+incline, and stop the belt.
 
 It speaks the standard Bluetooth SIG **Fitness Machine Service** (FTMS, `0x1826`), the same protocol
 Zwift, Kinomap and FitShow use, so it has a fair chance of working with other treadmills whose
 console advertises FTMS. It was written and tested against a Rio 45 iR under a standing desk.
 
-## Read-only by design
+![The Live data tab with the control panel](docs/screenshot.png)
 
-The app **never writes to the FTMS Control Point (`0x2AD9`)**. There is no code path that does, and
-that is deliberate: a belt that can be started from a background process next to a desk is a safety
-problem, not a feature. The app cannot start the treadmill, stop it, or change the incline.
+## Controlling the treadmill
 
-The *What can be read and set* tab does show which commands your console would accept, so you know
-what a controlling app could do. It is an inventory, not a remote.
+Control goes through the FTMS Control Point (`0x2AD9`): the app takes control, then sends Set Target
+Speed, Set Target Inclination, Start or Resume, and Stop. All four work on a Rio 45 iR with a FitShow
+console, tested on the belt. On any other console it is an open question, so every command is
+answered and the answer is shown in the Control panel, refusals like *Op Code not supported* or
+*Control Not Permitted* included.
+
+Moving a belt from software deserves care, so:
+
+- **Nothing is ever sent on its own.** Every command comes from a click. The app does not restore a
+  previous speed, does not resume after a reconnect, and sends nothing at startup.
+- **Control is taken lazily**, on the first command you issue, not when you connect. Some consoles
+  lock their own panel once a remote takes over, and just watching the numbers must not do that.
+- **Start always starts at the lowest speed** the console supports, and the button says which speed
+  that is before you press it. It also refuses to start at all unless the console has accepted that
+  speed first, so the belt never starts at whatever the console had in mind.
+- **Stop is one click and jumps ahead of anything queued.**
+- The console's own stop button and safety key are unaffected. This app is an extra remote, not a
+  replacement for them.
 
 ## Your data stays on your machine
 
@@ -58,7 +73,10 @@ certutil -hashfile Vifito-Desktop-Setup-0.1.0-x64.exe SHA256   # Windows
 
 Three tabs:
 
-- **Live data** - tiles, a speed chart, and the raw hex of the last frame.
+- **Live data** - tiles, the Control panel, a speed chart, and the raw hex of the last frame. The
+  Control panel steps speed and incline by 0.5, snapped to whatever grid the console advertises. It
+  shows one full-width button at a time, START while the belt is stopped and STOP once it moves, and
+  prints the console's answer to every command.
 - **Diagnostics** - every GATT service and characteristic the console exposes, with raw values, plus
   the last frames and status notifications. This is where you look when something does not add up.
 - **What can be read and set** - the full FTMS field and command inventory, showing what the console
@@ -100,7 +118,11 @@ value seen, which survives the console resetting them between workouts.
 - One treadmill at a time, and only while no other device holds the BLE connection.
 - Whether a field appears at all is up to the console. Cheap consoles typically send speed, incline,
   distance, time and calories, and nothing else.
-- No treadmill control, see above.
+- Control depends entirely on the console's firmware. Plenty of consoles expose a Control Point and
+  still refuse every command, and their advertised capabilities are unreliable in both directions.
+  The Control panel keeps its buttons live and lets the console answer for itself.
+- Speed and incline are stepped by 0.5 from the app. There is no slider and no direct entry, and the
+  belt is always started at the console's lowest speed.
 - Cheap USB BLE dongles vary. If the connection keeps dropping, try another adapter before blaming
   the app.
 

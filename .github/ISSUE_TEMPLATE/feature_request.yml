@@ -5,7 +5,7 @@ labels: [enhancement]
 body:
   - type: markdown
     attributes:
-      value: Writing to the FTMS Control Point (starting the belt, changing the incline) is out of scope by design, see the README.
+      value: The app can set speed and incline and start or stop the belt. Proposals that would send a command without a deliberate user action, or that put Stop behind anything, will be declined; see the safety rules in the README.
   - type: textarea
     id: problem
     attributes:
