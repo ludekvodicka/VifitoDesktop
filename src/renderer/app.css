@@ -93,7 +93,7 @@ header h1 {
   background: var(--warn);
 }
 
-.dot.error {
+.dot.failed {
   background: var(--err);
 }
 
@@ -128,6 +128,10 @@ nav button.active {
   border-color: var(--line);
   border-bottom-color: var(--panel);
   color: var(--accent);
+}
+
+.diagnostics-tab {
+  margin-left: auto;
 }
 
 main {
@@ -219,6 +223,43 @@ main {
   color: var(--muted);
 }
 
+.control-split {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.control-steppers {
+  flex: 1;
+  min-width: 0;
+}
+
+.control-presets {
+  flex: 1;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 20px;
+}
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  flex-wrap: wrap;
+}
+
+.preset-row .control-label {
+  flex: 0 0 112px;
+  width: 112px;
+  white-space: nowrap;
+}
+
+.preset-row button {
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+}
+
 .control-row {
   display: flex;
   align-items: center;
@@ -274,10 +315,171 @@ button.stop:hover:not(:disabled) {
   border-color: #ff8585;
 }
 
+.settings-row {
+  margin-bottom: 14px;
+}
+
+.settings-heading {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.settings-row input[type='number'] {
+  width: 68px;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-row input[type='number']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-field .control-note {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.settings-field input,
+.settings-field select {
+  width: 104px;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-field input {
+  text-align: right;
+}
+
+.settings-field input:focus,
+.settings-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-toggle-row {
+  margin: 18px 0 14px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.settings-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.settings-toggle-row .hint {
+  margin: 4px 0 0 24px;
+}
+
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
 .chart {
   width: 100%;
   height: 160px;
   display: block;
+}
+
+/* The question decides whose kilometres these are, so it has to be impossible to walk past. */
+.carry-over {
+  border-color: var(--warn);
+  background: rgba(255, 180, 84, 0.06);
+}
+
+.control-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.daily-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 170px;
+}
+
+.daily-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  min-width: 0;
+}
+
+.daily-value {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.daily-column {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--line);
+}
+
+.daily-fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+
+.daily-day {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .devices {

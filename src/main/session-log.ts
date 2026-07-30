@@ -1,41 +1,37 @@
-import { app } from 'electron'
-import { appendFile, mkdir, readFile } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { summarizeDay, type DaySummary, type Sample } from './summary'
+import type { Sample } from '../shared/stats'
 
-const dataDir = () => (app.isPackaged ? join(app.getPath('userData'), 'data') : join(process.cwd(), 'data'))
-
-function dayKey(t: number): string {
+/** Local YYYY-MM-DD. The log is bucketed by the day the user was walking, not by UTC. */
+export function dayKeyOf(t: number): string {
   const d = new Date(t)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-function fileFor(t: number): string {
-  return join(dataDir(), 'sessions', `${dayKey(t)}.jsonl`)
-}
+// baseDir is a parameter rather than a call to dataDir() so this module stays free of electron and
+// the tests can run it over a temp directory.
+const sessionsDir = (baseDir: string): string => join(baseDir, 'sessions')
+const fileFor = (baseDir: string, day: string): string => join(sessionsDir(baseDir), `${day}.jsonl`)
 
-export async function appendSamples(samples: Sample[]): Promise<void> {
+export async function appendSamples(baseDir: string, samples: Sample[]): Promise<void> {
   if (samples.length === 0) return
   const byDay = new Map<string, Sample[]>()
   for (const sample of samples) {
-    const key = dayKey(sample.t)
+    const key = dayKeyOf(sample.t)
     const bucket = byDay.get(key)
     if (bucket) bucket.push(sample)
     else byDay.set(key, [sample])
   }
-  await mkdir(join(dataDir(), 'sessions'), { recursive: true })
-  for (const bucket of byDay.values()) {
-    const first = bucket[0]
-    if (!first) continue
-    await appendFile(fileFor(first.t), bucket.map((s) => JSON.stringify(s)).join('\n') + '\n', 'utf8')
-  }
+  await mkdir(sessionsDir(baseDir), { recursive: true })
+  for (const [day, bucket] of byDay)
+    await appendFile(fileFor(baseDir, day), bucket.map((s) => JSON.stringify(s)).join('\n') + '\n', 'utf8')
 }
 
-export async function readDay(t: number): Promise<Sample[]> {
+export async function readDayByKey(baseDir: string, day: string): Promise<Sample[]> {
   let raw: string
   try {
-    raw = await readFile(fileFor(t), 'utf8')
+    raw = await readFile(fileFor(baseDir, day), 'utf8')
   } catch {
     return []
   }
@@ -51,6 +47,17 @@ export async function readDay(t: number): Promise<Sample[]> {
   return samples
 }
 
-export async function todaySummary(): Promise<DaySummary> {
-  return summarizeDay(await readDay(Date.now()))
+/** The days that have a sample file, oldest first. */
+export async function listDays(baseDir: string): Promise<string[]> {
+  let entries: string[]
+  try {
+    entries = await readdir(sessionsDir(baseDir))
+  } catch {
+    return []
+  }
+  return entries
+    .filter((name) => name.endsWith('.jsonl'))
+    .map((name) => name.slice(0, -'.jsonl'.length))
+    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
+    .sort()
 }

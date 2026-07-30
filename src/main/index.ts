@@ -1,11 +1,17 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { appendSamples, todaySummary } from './session-log'
-import type { Sample } from './summary'
+import { dataDir } from './paths'
+import { appendSamples } from './session-log'
+import { readSettings, writeSettings } from './settings'
+import { createStatsStore } from './stats-store'
+import type { Sample } from '../shared/stats'
 import { startAutoUpdates } from './update'
 
 /** Callback from the select-bluetooth-device event. Held until the user picks a device. */
 let pickDevice: ((deviceId: string) => void) | null = null
+
+const stats = createStatsStore(dataDir())
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -13,7 +19,7 @@ function createWindow(): void {
     height: 820,
     backgroundColor: '#0f1116',
     show: false,
-    title: 'Vifito Rio 45 iR',
+    title: 'Vifito iR',
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       sandbox: true,
@@ -51,10 +57,34 @@ ipcMain.on('ble:cancel', () => {
 })
 
 ipcMain.handle('log:samples', async (_event, samples: Sample[]) => {
-  await appendSamples(samples)
+  // The raw log is written first and never waits for the derived stats. If the cache throws, the
+  // samples are still on disk and the next rebuild repairs it.
+  await appendSamples(dataDir(), samples)
+  try {
+    await stats.ingest(samples)
+  } catch (error) {
+    console.error('[stats] ingest failed, the cache will be rebuilt from the log:', error)
+  }
 })
 
-ipcMain.handle('log:today', async () => todaySummary())
+ipcMain.handle('log:today', async () => stats.todaySummary())
+
+ipcMain.handle('stats:get', async () => stats.overview())
+
+// Kept for the console history investigation: the dump is the only record of what a console really
+// exposes, and it has to survive the app being closed. Colons are not legal in a Windows file name.
+ipcMain.handle('diag:save-gatt-dump', async (_event, dump: unknown) => {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const directory = join(dataDir(), 'diagnostics')
+  await mkdir(directory, { recursive: true })
+  const path = join(directory, `gatt-dump-${stamp}.json`)
+  await writeFile(path, `${JSON.stringify(dump, null, 2)}\n`, 'utf8')
+  return path
+})
+
+ipcMain.handle('settings:get', async () => readSettings())
+
+ipcMain.handle('settings:set', async (_event, settings: unknown) => writeSettings(settings))
 
 void app.whenReady().then(() => {
   createWindow()

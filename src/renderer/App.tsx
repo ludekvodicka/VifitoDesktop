@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DaySummary, Sample, ScannedDevice } from '../preload/index'
+import type { ScannedDevice } from '../preload/index'
+import type { DaySummary, Sample, StatsOverview } from '../shared/stats'
 import {
   dumpGatt,
   openControl,
@@ -18,12 +19,15 @@ import {
   type ControlCommand,
   type ControlResponse,
 } from './ble/controlPoint'
-import { mergeFrames, parseTreadmillData, type TreadmillData } from './ble/ftms'
+import { mergeFrames, parseTreadmillData, type Range, type TreadmillData } from './ble/ftms'
 import { Capabilities } from './Capabilities'
+import { Settings } from './Settings'
+import { DailyChart, Stats } from './Stats'
 import { UUID } from './ble/uuids'
+import { DEFAULT_SETTINGS, type AppSettings } from '../shared/settings'
 
 type Phase = 'idle' | 'scanning' | 'connecting' | 'connected'
-type Tab = 'live' | 'diag' | 'caps'
+type Tab = 'live' | 'stats' | 'diag' | 'settings'
 type StatusLine = { t: number; label: string; hex: string }
 
 const HISTORY_POINTS = 180
@@ -40,6 +44,12 @@ const INCLINE_STEP = 0.5
  * motion while it slows down, and a button that follows every frame would flicker through both.
  */
 const BELT_STATE_SETTLE_MS = 2500
+/**
+ * How long the carry-over question waits for an answer. The samples keep buffering meanwhile, so
+ * nothing is lost; after this the safe answer is assumed and the walk is logged from the connection
+ * onwards.
+ */
+const CARRY_OVER_TIMEOUT_MS = 60_000
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -54,6 +64,15 @@ function describeError(err: unknown): string {
 
 function fmtNumber(value: number | undefined, digits: number): string {
   return value === undefined ? '-' : value.toFixed(digits)
+}
+
+/** A preset the console cannot reach is shown but not clickable. */
+function outOfRange(value: number, range: Range | undefined): boolean {
+  return range !== undefined && (value < range.min || value > range.max)
+}
+
+function formatPreset(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
 
 function fmtDistance(meters: number | undefined): string {
@@ -117,6 +136,12 @@ export function App() {
   const [framesSeen, setFramesSeen] = useState(0)
   const [info, setInfo] = useState<MachineInfo | null>(null)
   const [today, setToday] = useState<DaySummary | null>(null)
+  const [stats, setStats] = useState<StatsOverview | null>(null)
+  const [dumpPath, setDumpPath] = useState<string | null>(null)
+  /** What the console had already counted when this connection started, until the user answers. */
+  const [carryOver, setCarryOver] = useState<{ elapsedSec: number; distanceM: number } | null>(null)
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
+  const presets = settings.presets
   const [hasControlPoint, setHasControlPoint] = useState(false)
   const [controlMessage, setControlMessage] = useState<string | null>(null)
   /** null means the target follows what the console reports, until the user changes it. */
@@ -135,18 +160,51 @@ export function App() {
   const bufferRef = useRef<Sample[]>([])
   /** Last merged state the tiles are built from. */
   const lastRef = useRef<TreadmillData | null>(null)
+  // Mirrors of the two target states, so the sample callback can stamp them without being recreated.
+  const targetSpeedRef = useRef<number | null>(null)
+  const targetInclineRef = useRef<number | null>(null)
+  const carryOverAskedRef = useRef(false)
+  const carryOverPendingRef = useRef(false)
+  const carryOverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /**
+   * `mine` credits the counters the console was already carrying to this walk; otherwise they become
+   * the starting point. The answer is stamped on the first buffered sample, so it lives in the raw
+   * log and a cache rebuild reaches the same result.
+   */
+  const answerCarryOver = useCallback((mine: boolean) => {
+    if (carryOverTimerRef.current) clearTimeout(carryOverTimerRef.current)
+    carryOverTimerRef.current = null
+    carryOverPendingRef.current = false
+    setCarryOver(null)
+    const first = bufferRef.current[0]
+    if (first && !mine) first.counterBaseline = true
+  }, [])
+
+  useEffect(() => {
+    targetSpeedRef.current = targetSpeed
+  }, [targetSpeed])
+
+  useEffect(() => {
+    targetInclineRef.current = targetIncline
+  }, [targetIncline])
 
   const refreshToday = useCallback(async () => {
     setToday(await window.vifito.today())
+    setStats(await window.vifito.getStats())
   }, [])
 
   useEffect(() => {
     void refreshToday()
+    void window.vifito.getSettings().then(setSettings)
     return window.vifito.onDevices(setDevices)
   }, [refreshToday])
 
   useEffect(() => {
     const timer = setInterval(() => {
+      // Hold everything back while the carry-over question is open: the answer belongs on the first
+      // sample of the connection, and that sample must not be written before it is known.
+      if (carryOverPendingRef.current) return
       const batch = bufferRef.current.splice(0, bufferRef.current.length)
       if (batch.length === 0) return
       void window.vifito.logSamples(batch).then(refreshToday)
@@ -158,6 +216,14 @@ export function App() {
     const parsed = parseTreadmillData(view)
     const merged = mergeFrames(lastRef.current, parsed)
     lastRef.current = merged
+    // The console keeps counting with no computer attached, so the first frame of a connection can
+    // arrive with a workout already in progress. Whose it is, only the user knows.
+    if (!carryOverAskedRef.current && (merged.elapsedSec ?? 0) + (merged.distanceM ?? 0) > 0) {
+      carryOverAskedRef.current = true
+      carryOverPendingRef.current = true
+      setCarryOver({ elapsedSec: merged.elapsedSec ?? 0, distanceM: merged.distanceM ?? 0 })
+      carryOverTimerRef.current = setTimeout(() => answerCarryOver(false), CARRY_OVER_TIMEOUT_MS)
+    }
     setData(merged)
     setFrames((prev) => [parsed, ...prev].slice(0, 12))
     setSeenFlags((prev) => prev | parsed.flags)
@@ -171,6 +237,9 @@ export function App() {
       elapsedSec: merged.elapsedSec,
       energyTotalKcal: merged.energyTotalKcal,
       heartRateBpm: merged.heartRateBpm,
+      // Read from refs: this callback is created once, so the state values would be stale here.
+      targetSpeedKmh: targetSpeedRef.current ?? undefined,
+      targetInclinePercent: targetInclineRef.current ?? undefined,
     })
   }, [])
 
@@ -254,10 +323,11 @@ export function App() {
       const services = await dumpGatt(server)
       setDump(services)
       if (!services.some((service) => service.uuid === UUID.fitnessMachine)) {
-        setTab('diag')
+        if (settings.showDiagnostics) setTab('diag')
         throw new Error(
-          'The console does not advertise the Fitness Machine service (0x1826). Check Diagnostics for ' +
-            'what it returns, and whether the vendor services 0xFFF0 or 0xFFE0 are there instead.',
+          settings.showDiagnostics
+            ? 'The console does not advertise the Fitness Machine service (0x1826). Check Diagnostics for what it returns, and whether the vendor services 0xFFF0 or 0xFFE0 are there instead.'
+            : 'The console does not advertise the Fitness Machine service (0x1826). It may expose the vendor services 0xFFF0 or 0xFFE0 instead.',
         )
       }
       setInfo(await readMachineInfo(server))
@@ -267,7 +337,7 @@ export function App() {
       setHasControlPoint(controlRef.current !== null)
       setPhase('connected')
     },
-    [onStatus, onTreadmillData],
+    [onStatus, onTreadmillData, settings.showDiagnostics],
   )
 
   const onDisconnected = useCallback(async () => {
@@ -296,6 +366,9 @@ export function App() {
     setPhase('scanning')
     manualRef.current = false
     lastRef.current = null
+    // A fresh connection asks about the standing counters again: the machine may have been used by
+    // somebody else in the meantime.
+    carryOverAskedRef.current = false
     setData(null)
     setHistory([])
     setFrames([])
@@ -358,8 +431,35 @@ export function App() {
     schedule(inclineTimerRef, () => encodeSetIncline(next))
   }
 
+  // A preset is one decision, so it goes out at once. The 250 ms wait exists for a run of clicks on
+  // the steppers, and any such wait still pending would land after the preset and undo it.
+  const applySpeed = (value: number) => {
+    if (speedTimerRef.current) clearTimeout(speedTimerRef.current)
+    speedTimerRef.current = null
+    const next = quantize(value, info?.speedRange, SPEED_STEP)
+    setTargetSpeed(next)
+    void runCommand(encodeSetSpeed(next))
+  }
+
+  const applyIncline = (value: number) => {
+    if (inclineTimerRef.current) clearTimeout(inclineTimerRef.current)
+    inclineTimerRef.current = null
+    const next = quantize(value, info?.inclinationRange, INCLINE_STEP)
+    setTargetIncline(next)
+    void runCommand(encodeSetIncline(next))
+  }
+
   // The target speed goes first and the belt only starts once the console has accepted it. Starting
   // on a refused target would run the belt at whatever speed the console still had in mind.
+  const saveDump = async () => {
+    if (!dump) return
+    try {
+      setDumpPath(await window.vifito.saveGattDump({ savedAt: new Date().toISOString(), deviceName, services: dump }))
+    } catch (err) {
+      setDumpPath(describeError(err))
+    }
+  }
+
   const startBelt = async () => {
     setTargetSpeed(lowestSpeed)
     const accepted = await runCommand(encodeSetSpeed(lowestSpeed))
@@ -368,7 +468,7 @@ export function App() {
     if (started?.ok) setBeltState(true)
   }
 
-  const dotClass = phase === 'connected' ? 'connected' : phase === 'idle' ? (error ? 'error' : '') : 'working'
+  const dotClass = phase === 'connected' ? 'connected' : phase === 'idle' ? (error ? 'failed' : '') : 'working'
   const statusText =
     phase === 'connected'
       ? `connected: ${deviceName}`
@@ -381,7 +481,7 @@ export function App() {
   return (
     <div className="app">
       <header>
-        <h1>Vifito Rio 45 iR</h1>
+        <h1>Vifito iR</h1>
         <div className="status">
           <span className={`dot ${dotClass}`} />
           {statusText}
@@ -410,12 +510,20 @@ export function App() {
         <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
           Live data
         </button>
-        <button className={tab === 'diag' ? 'active' : ''} onClick={() => setTab('diag')}>
-          Diagnostics
+        <button className={tab === 'stats' ? 'active' : ''} onClick={() => setTab('stats')}>
+          Stats
         </button>
-        <button className={tab === 'caps' ? 'active' : ''} onClick={() => setTab('caps')}>
-          What can be read and set
+        <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
+          Settings
         </button>
+        {settings.showDiagnostics && (
+          <button
+            className={tab === 'diag' ? 'diagnostics-tab active' : 'diagnostics-tab'}
+            onClick={() => setTab('diag')}
+          >
+            Diagnostics
+          </button>
+        )}
       </nav>
 
       <main>
@@ -451,6 +559,24 @@ export function App() {
 
         {tab === 'live' && (
           <>
+            {carryOver && (
+              <div className="panel carry-over">
+                <h2>Already on the console</h2>
+                <div className="hint" style={{ marginBottom: 12 }}>
+                  The console was counting before this connection: <b>{fmtDuration(carryOver.elapsedSec)}</b> and{' '}
+                  <b>{(carryOver.distanceM / 1000).toFixed(2)} km</b>. It keeps counting with no computer attached, so
+                  this may be your own walk from earlier, or somebody else's. Nothing is written until you answer.
+                </div>
+                <div className="control-confirm">
+                  <button className="primary" onClick={() => answerCarryOver(true)}>
+                    That was me, count it
+                  </button>
+                  <button onClick={() => answerCarryOver(false)}>Start from zero</button>
+                  <span className="control-note">Unanswered for a minute counts as starting from zero.</span>
+                </div>
+              </div>
+            )}
+
             <div className="tiles">
               <Tile label="Speed" value={fmtNumber(data?.speedKmh, 1)} unit="km/h" />
               <Tile label="Incline" value={fmtNumber(data?.inclinePercent, 1)} unit="%" />
@@ -478,38 +604,72 @@ export function App() {
                   </div>
                 ) : (
                   <>
-                    <div className="control-row">
-                      <span className="control-label">Speed</span>
-                      <button onClick={() => nudgeSpeed(-1)}>−</button>
-                      <span className="control-value">
-                        {shownSpeed.toFixed(1)}
-                        <span className="unit">km/h</span>
-                      </span>
-                      <button onClick={() => nudgeSpeed(1)}>+</button>
-                      <span className="control-note">
-                        steps of {SPEED_STEP}
-                        {info?.speedRange
-                          ? `, range ${info.speedRange.min.toFixed(1)} - ${info.speedRange.max.toFixed(1)}`
-                          : ', range unknown'}
-                        {unannounced('Speed Target') && ', not advertised by the console'}
-                      </span>
-                    </div>
+                    <div className="control-split">
+                      <div className="control-steppers">
+                        <div className="control-row">
+                          <span className="control-label">Speed</span>
+                          <button onClick={() => nudgeSpeed(-1)}>−</button>
+                          <span className="control-value">
+                            {shownSpeed.toFixed(1)}
+                            <span className="unit">km/h</span>
+                          </span>
+                          <button onClick={() => nudgeSpeed(1)}>+</button>
+                          <span className="control-note">
+                            steps of {SPEED_STEP}
+                            {info?.speedRange
+                              ? `, range ${info.speedRange.min.toFixed(1)} - ${info.speedRange.max.toFixed(1)}`
+                              : ', range unknown'}
+                            {unannounced('Speed Target') && ', not advertised by the console'}
+                          </span>
+                        </div>
 
-                    <div className="control-row">
-                      <span className="control-label">Incline</span>
-                      <button onClick={() => nudgeIncline(-1)}>−</button>
-                      <span className="control-value">
-                        {shownIncline.toFixed(1)}
-                        <span className="unit">%</span>
-                      </span>
-                      <button onClick={() => nudgeIncline(1)}>+</button>
-                      <span className="control-note">
-                        steps of {INCLINE_STEP}
-                        {info?.inclinationRange
-                          ? `, range ${info.inclinationRange.min.toFixed(1)} - ${info.inclinationRange.max.toFixed(1)}`
-                          : ', range unknown'}
-                        {unannounced('Inclination Target') && ', not advertised by the console'}
-                      </span>
+                        <div className="control-row">
+                          <span className="control-label">Incline</span>
+                          <button onClick={() => nudgeIncline(-1)}>−</button>
+                          <span className="control-value">
+                            {shownIncline.toFixed(1)}
+                            <span className="unit">%</span>
+                          </span>
+                          <button onClick={() => nudgeIncline(1)}>+</button>
+                          <span className="control-note">
+                            steps of {INCLINE_STEP}
+                            {info?.inclinationRange
+                              ? `, range ${info.inclinationRange.min.toFixed(1)} - ${info.inclinationRange.max.toFixed(1)}`
+                              : ', range unknown'}
+                            {unannounced('Inclination Target') && ', not advertised by the console'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="control-presets">
+                        <div className="preset-row">
+                          <div className="control-label">Speed presets</div>
+                          {presets.speedsKmh.map((preset, index) => (
+                            <button
+                              key={`speed-${index}`}
+                              disabled={outOfRange(preset, info?.speedRange)}
+                              onClick={() => applySpeed(preset)}
+                            >
+                              {formatPreset(preset)}
+                            </button>
+                          ))}
+                          <span className="control-note">km/h</span>
+                        </div>
+
+                        <div className="preset-row">
+                          <div className="control-label">Incline presets</div>
+                          {presets.inclinesPercent.map((preset, index) => (
+                            <button
+                              key={`incline-${index}`}
+                              disabled={outOfRange(preset, info?.inclinationRange)}
+                              onClick={() => applyIncline(preset)}
+                            >
+                              {formatPreset(preset)}
+                            </button>
+                          ))}
+                          <span className="control-note">%</span>
+                        </div>
+                      </div>
                     </div>
 
                     {running ? (
@@ -528,23 +688,19 @@ export function App() {
 
             <div className="panel">
               <h2 className="row">
+                <span>Last 14 days</span>
+                <span className="note">km walked per day</span>
+              </h2>
+              <DailyChart stats={stats} weightKg={settings.profile.weightKg} />
+            </div>
+
+            <div className="panel">
+              <h2 className="row">
                 <span>Speed over time</span>
                 {history.length > 1 && <span className="note">max {chartMax.toFixed(1)} km/h</span>}
               </h2>
               <SpeedChart points={history} max={chartMax} />
             </div>
-
-            {data && (
-              <div className="panel">
-                <h2>Last frame</h2>
-                <div className="mono hex">{data.hex}</div>
-                {data.truncated && (
-                  <div className="hint">
-                    The flags promised more fields than the console sent. The parser skipped the rest.
-                  </div>
-                )}
-              </div>
-            )}
 
             {phase === 'idle' && !data && (
               <div className="panel">
@@ -559,7 +715,7 @@ export function App() {
           </>
         )}
 
-        {tab === 'diag' && (
+        {settings.showDiagnostics && tab === 'diag' && (
           <>
             <div className="panel">
               <h2>Device</h2>
@@ -608,8 +764,16 @@ export function App() {
             )}
 
             <div className="panel">
-              <h2>GATT services and characteristics</h2>
+              <h2 className="row">
+                <span>GATT services and characteristics</span>
+                <span className="note">
+                  <button disabled={!dump} onClick={() => void saveDump()}>
+                    Save dump
+                  </button>
+                </span>
+              </h2>
               {!dump && <div className="hint">The dump is filled in after connecting.</div>}
+              {dumpPath && <div className="hint mono">Saved to {dumpPath}</div>}
               {dump?.map((service) => (
                 <div key={service.uuid} style={{ marginBottom: 14 }}>
                   <div style={{ marginBottom: 4 }}>
@@ -668,12 +832,14 @@ export function App() {
                 ))}
               </div>
             </div>
+
+            <Capabilities info={info} dump={dump} seenFlags={seenFlags} framesSeen={framesSeen} data={data} />
           </>
         )}
 
-        {tab === 'caps' && (
-          <Capabilities info={info} dump={dump} seenFlags={seenFlags} framesSeen={framesSeen} data={data} />
-        )}
+        {tab === 'stats' && <Stats stats={stats} weightKg={settings.profile.weightKg} />}
+
+        {tab === 'settings' && <Settings settings={settings} onSaved={setSettings} />}
       </main>
     </div>
   )

@@ -15,7 +15,35 @@ It speaks the standard Bluetooth SIG **Fitness Machine Service** (FTMS, `0x1826`
 Zwift, Kinomap and FitShow use, so it has a fair chance of working with other treadmills whose
 console advertises FTMS. It was written and tested against a Rio 45 iR under a standing desk.
 
+## Features
+
+### Live data and control
+
+Tiles that follow the console, a speed chart, and a control panel that sets the speed and the incline
+in steps of 0.5 or straight from a preset button. One full-width button at a time: START while the
+belt is stopped, STOP once it moves.
+
 ![The Live data tab with the control panel](docs/screenshot.png)
+
+### Last 14 days
+
+A bar per day, on the main screen, so a gap in the habit is visible at a glance. Days with no walking
+stay in the chart as empty slots rather than being skipped.
+
+![The daily chart on the Live data tab](docs/screenshot-daily-chart.png)
+
+### Detailed stats
+
+Every use of the machine, newest first, grouped by day with a daily total. Per workout: when it
+started and ended, how long the console counted, the distance, average and maximum speed and incline,
+calories, heart rate, and the last target the app sent. Written as you walk, so the current workout is
+already in the list.
+
+Calories come from your own profile when you fill in a weight, and from the console otherwise; each
+row says which. Records are derived from the raw sample log and rebuilt whenever they are missing, so
+the history you already have appears without any import step.
+
+![The Stats tab with the workout list](docs/screenshot-stats.png)
 
 ## Controlling the treadmill
 
@@ -43,12 +71,19 @@ Moving a belt from software deserves care, so:
 Samples are appended to a local JSONL file, one per day, and nothing is ever sent anywhere. There is
 no telemetry, no account, and no network traffic other than the update check against GitHub Releases.
 
-| build | log location |
+| build | data location |
 | --- | --- |
-| installed | `<userData>/data/sessions/YYYY-MM-DD.jsonl` (`%APPDATA%/Vifito Desktop` on Windows, `~/Library/Application Support/Vifito Desktop` on macOS, `~/.config/Vifito Desktop` on Linux) |
-| from source | `data/sessions/YYYY-MM-DD.jsonl` in the project directory |
+| installed | `<userData>/data/` (`%APPDATA%/Vifito Desktop` on Windows, `~/Library/Application Support/Vifito Desktop` on macOS, `~/.config/Vifito Desktop` on Linux) |
+| from source | `data/` in the project directory |
 
-Delete the file and the day's history is gone. It is plain text, one JSON object per line.
+Inside it, `sessions/YYYY-MM-DD.jsonl` is the raw log, one JSON object per line, and it is the only
+source of truth. `stats/YYYY-MM-DD.json` holds the workout records the Stats tab shows; it is a cache
+computed from the log and is rebuilt whenever it is missing or out of date. Delete a day's `.jsonl`
+and that day is gone for good; delete its `.json` and it comes straight back.
+
+Because the installed app writes under your own account directory, two people on the same treadmill
+keep separate histories as long as they use separate Windows accounts. The app has no login and no
+profile switching of its own.
 
 ## Install
 
@@ -77,17 +112,27 @@ certutil -hashfile Vifito-Desktop-Setup-0.1.0-x64.exe SHA256   # Windows
    console off and scan again: the device that disappears is the one.
 3. Walk. The tiles follow the console.
 
-Three tabs:
+If the console was already counting when you connect, the app asks whether that walk was yours before
+it records anything. The console keeps counting with no computer attached, so those kilometres may be
+yours from earlier, or they may belong to whoever used the treadmill before you.
 
-- **Live data** - tiles, the Control panel, a speed chart, and the raw hex of the last frame. The
+The app shows four tabs by default:
+
+- **Live data** - tiles, the Control panel, a bar chart of the last 14 days and a speed chart. The
   Control panel steps speed and incline by 0.5, snapped to whatever grid the console advertises. It
   shows one full-width button at a time, START while the belt is stopped and STOP once it moves, and
   prints the console's answer to every command.
-- **Diagnostics** - every GATT service and characteristic the console exposes, with raw values, plus
-  the last frames and status notifications. This is where you look when something does not add up.
-- **What can be read and set** - the full FTMS field and command inventory, showing what the console
-  claims to support against what actually arrived over the air. The two columns often disagree, and
-  the right one wins.
+- **Stats** - every use of the machine, newest first, grouped by day: when it started, how long it
+  ran, the distance, the average and maximum speed and incline, calories, heart rate and the last
+  target the app set. Written as you walk, so the current workout is in the list with an *in
+  progress* badge.
+- **Settings** - the values shown on the speed and incline preset buttons, your profile for the
+  calorie estimate, plus **Show diagnostics**. Diagnostics is shown by default; clear the checkbox
+  and save to hide its tab completely.
+- **Diagnostics** - every GATT service and characteristic the console exposes, raw frames and status
+  notifications, plus the full FTMS field and command inventory. It compares what the console claims
+  to support with what actually arrived over the air; the two often disagree, and the received data
+  wins.
 
 ## Build from source
 
