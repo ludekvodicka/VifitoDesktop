@@ -1,6 +1,6 @@
 {
   "name": "vifito-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Desktop app that reads live data from a VIFITO Rio 45 iR treadmill over Bluetooth FTMS and controls its speed and incline",
