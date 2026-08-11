@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AppSettings } from '../shared/settings'
 import type { DaySummary, Sample, StatsOverview } from '../shared/stats'
+import type { UpdateState } from '../shared/update'
 
 export type ScannedDevice = { deviceId: string; deviceName: string }
 
@@ -37,6 +38,27 @@ const api = {
   /** Returns what was actually stored, which is the normalized version of what was sent. */
   saveSettings(settings: AppSettings): Promise<AppSettings> {
     return ipcRenderer.invoke('settings:set', settings)
+  },
+  getVersion(): Promise<string> {
+    return ipcRenderer.invoke('app:version')
+  },
+  /** The state as the main process knows it now, for a renderer that mounted after the check. */
+  getUpdateState(): Promise<UpdateState> {
+    return ipcRenderer.invoke('update:get')
+  },
+  onUpdateState(callback: (state: UpdateState) => void): () => void {
+    const handler = (_event: unknown, state: UpdateState) => callback(state)
+    ipcRenderer.on('update:state', handler)
+    return () => {
+      ipcRenderer.off('update:state', handler)
+    }
+  },
+  checkForUpdate(): Promise<void> {
+    return ipcRenderer.invoke('update:check')
+  },
+  /** Quits and installs what was downloaded. Nothing happens unless an update is ready. */
+  installUpdate(): Promise<void> {
+    return ipcRenderer.invoke('update:install')
   },
 }
 

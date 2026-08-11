@@ -6,7 +6,7 @@ import { appendSamples } from './session-log'
 import { readSettings, writeSettings } from './settings'
 import { createStatsStore } from './stats-store'
 import type { Sample } from '../shared/stats'
-import { startAutoUpdates } from './update'
+import { checkForUpdates, getUpdateState, installUpdate, startAutoUpdates } from './update'
 
 /** Callback from the select-bluetooth-device event. Held until the user picks a device. */
 let pickDevice: ((deviceId: string) => void) | null = null
@@ -85,6 +85,14 @@ ipcMain.handle('diag:save-gatt-dump', async (_event, dump: unknown) => {
 ipcMain.handle('settings:get', async () => readSettings())
 
 ipcMain.handle('settings:set', async (_event, settings: unknown) => writeSettings(settings))
+
+ipcMain.handle('app:version', async () => app.getVersion())
+
+ipcMain.handle('update:get', async () => getUpdateState())
+
+ipcMain.handle('update:check', async () => checkForUpdates())
+
+ipcMain.handle('update:install', async () => installUpdate())
 
 void app.whenReady().then(() => {
   createWindow()

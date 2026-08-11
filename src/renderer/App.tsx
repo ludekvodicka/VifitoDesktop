@@ -23,6 +23,7 @@ import { mergeFrames, parseTreadmillData, type Range, type TreadmillData } from 
 import { Capabilities } from './Capabilities'
 import { Settings } from './Settings'
 import { DailyChart, Stats } from './Stats'
+import { StatusBar } from './StatusBar'
 import { UUID } from './ble/uuids'
 import { DEFAULT_SETTINGS, type AppSettings } from '../shared/settings'
 
@@ -841,6 +842,8 @@ export function App() {
 
         {tab === 'settings' && <Settings settings={settings} onSaved={setSettings} />}
       </main>
+
+      <StatusBar />
     </div>
   )
 }

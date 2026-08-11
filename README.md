@@ -45,6 +45,13 @@ the history you already have appears without any import step.
 
 ![The Stats tab with the workout list](docs/screenshot-stats.png)
 
+### Status bar
+
+The bar along the bottom names the version you are running and what the update check found: `up to
+date`, `version 0.4.0 available`, the download running, or `0.3.0 ready` with a button that restarts
+into the new build. **Check now** repeats the check, which otherwise happens once at startup. A build
+started from source says updates are off instead, and asks GitHub nothing.
+
 ## Controlling the treadmill
 
 Control goes through the FTMS Control Point (`0x2AD9`): the app takes control, then sends Set Target
@@ -97,8 +104,9 @@ sha256sum Vifito-Desktop-Setup-0.1.0-x64.exe    # Linux, macOS, Git Bash
 certutil -hashfile Vifito-Desktop-Setup-0.1.0-x64.exe SHA256   # Windows
 ```
 
-- **Windows** - `Setup` installs and can update itself from GitHub Releases; `Portable` is a single
-  executable you update by replacing. SmartScreen will warn about an unknown publisher.
+- **Windows** - `Setup` installs and can update itself from GitHub Releases, which the status bar
+  signals; `Portable` is a single executable you update by replacing. SmartScreen will warn about an
+  unknown publisher.
 - **Linux** - `AppImage` or `.deb`. BlueZ has to be running.
 - **macOS** - `.dmg`, unsigned, so Gatekeeper will refuse the first launch until you allow it in
   System Settings. macOS asks for Bluetooth permission on first connect. Updates are manual.

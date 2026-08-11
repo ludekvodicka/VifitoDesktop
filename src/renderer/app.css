@@ -140,6 +140,23 @@ main {
   padding: 16px 20px 24px;
 }
 
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.statusbar button {
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
 .error {
   border: 1px solid var(--err);
   background: rgba(255, 107, 107, 0.08);
