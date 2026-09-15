@@ -32,6 +32,6 @@ Diagnostics tab.
   the lowest speed and only once the console has accepted it, Stop ahead of anything queued and never
   behind a confirmation. A change that weakens any of these needs a stated reason.
 
-The maintainer's internal source of truth is SVN and GitHub is a reviewed public projection. After a
-PR merges, the maintainer backports it into the internal tree before the next public sync.
+Source changes use ordinary Git commits and pull requests. Releases are built from version tags on
+the main branch. Local AI checkpoints and workout logs are ignored and never belong in Git commits.
 Contributors do not need SVN access or any private tooling.

@@ -27,7 +27,7 @@ jobs:
       - run: pnpm run check
 
   # Secret scan. This runs AFTER a push lands, so it cannot prevent a leak: a pushed secret is
-  # already exposed and has to be rotated. Real prevention is the maintainer's pre-push export gate.
+  # already exposed and has to be rotated. Real prevention is the maintainer's pre-push Git check.
   # This job exists to block a contributor PR that carries a secret from reaching main.
   gitleaks:
     name: secret scan
