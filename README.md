@@ -24,7 +24,9 @@ in steps of 0.5 or straight from a preset button. START appears while the belt i
 moves, STOP and Slowdown appear side by side. Slowdown temporarily sets 1 km/h; the button then shows
 a pause icon and the speed that a second click will restore.
 
-![The Live data tab with the control panel](docs/screenshot.png)
+![Live data with simulated walking data and the large pause button beside STOP](docs/screenshot.png)
+
+Simulated walking data with Slowdown active at 1 km/h and a saved speed of 5.2 km/h.
 
 ### Last 14 days
 
