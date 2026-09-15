@@ -332,6 +332,41 @@ button.stop:hover:not(:disabled) {
   border-color: #ff8585;
 }
 
+.belt-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.belt-actions button.big {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+button.slowdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--warn);
+  border-color: var(--warn);
+  letter-spacing: normal;
+}
+
+button.slowdown:hover:not(:disabled),
+button.slowdown[aria-pressed='true'] {
+  color: var(--bg);
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.pause-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  fill: currentColor;
+}
+
 .settings-row {
   margin-bottom: 14px;
 }

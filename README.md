@@ -20,8 +20,9 @@ console advertises FTMS. It was written and tested against a Rio 45 iR under a s
 ### Live data and control
 
 Tiles that follow the console, a speed chart, and a control panel that sets the speed and the incline
-in steps of 0.5 or straight from a preset button. One full-width button at a time: START while the
-belt is stopped, STOP once it moves.
+in steps of 0.5 or straight from a preset button. START appears while the belt is stopped. Once it
+moves, STOP and Slowdown appear side by side. Slowdown temporarily sets 1 km/h; the button then shows
+a pause icon and the speed that a second click will restore.
 
 ![The Live data tab with the control panel](docs/screenshot.png)
 
@@ -63,13 +64,16 @@ answered and the answer is shown in the Control panel, refusals like *Op Code no
 Moving a belt from software deserves care, so:
 
 - **Nothing is ever sent on its own.** Every command comes from a click. The app does not restore a
-  previous speed, does not resume after a reconnect, and sends nothing at startup.
+  previous speed automatically, does not resume after a reconnect, and sends nothing at startup.
 - **Control is taken lazily**, on the first command you issue, not when you connect. Some consoles
   lock their own panel once a remote takes over, and just watching the numbers must not do that.
 - **Start always starts at the lowest speed** the console supports, and the button says which speed
   that is before you press it. It also refuses to start at all unless the console has accepted that
   speed first, so the belt never starts at whatever the console had in mind.
 - **Stop is one click and jumps ahead of anything queued.**
+- **Slowdown keeps the belt moving at 1 km/h.** Click it again to restore the saved speed. Stop,
+  disconnecting, or choosing another speed clears the saved speed. It is available above 1 km/h
+  when the console's speed range supports 1 km/h.
 - The console's own stop button and safety key are unaffected. This app is an extra remote, not a
   replacement for them.
 
@@ -128,8 +132,8 @@ The app shows four tabs by default:
 
 - **Live data** - tiles, the Control panel, a bar chart of the last 14 days and a speed chart. The
   Control panel steps speed and incline by 0.5, snapped to whatever grid the console advertises. It
-  shows one full-width button at a time, START while the belt is stopped and STOP once it moves, and
-  prints the console's answer to every command.
+  shows START while the belt is stopped, STOP and Slowdown once it moves, and prints the console's
+  answer to every command.
 - **Stats** - every use of the machine, newest first, grouped by day: when it started, how long it
   ran, the distance, the average and maximum speed and incline, calories, heart rate and the last
   target the app set. Written as you walk, so the current workout is in the list with an *in

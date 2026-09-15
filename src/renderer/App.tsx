@@ -148,6 +148,8 @@ export function App() {
   /** null means the target follows what the console reports, until the user changes it. */
   const [targetSpeed, setTargetSpeed] = useState<number | null>(null)
   const [targetIncline, setTargetIncline] = useState<number | null>(null)
+  const [resumeSpeed, setResumeSpeed] = useState<number | null>(null)
+  const [slowdownPending, setSlowdownPending] = useState(false)
   /** Drives which of the two big buttons is shown, see the hysteresis effect below. */
   const [running, setRunning] = useState(false)
 
@@ -157,6 +159,7 @@ export function App() {
   const controlRef = useRef<ControlChannel | null>(null)
   const speedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inclineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const slowdownRequestRef = useRef<symbol | null>(null)
   const manualRef = useRef(false)
   const bufferRef = useRef<Sample[]>([])
   /** Last merged state the tiles are built from. */
@@ -167,6 +170,12 @@ export function App() {
   const carryOverAskedRef = useRef(false)
   const carryOverPendingRef = useRef(false)
   const carryOverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearSlowdown = useCallback(() => {
+    slowdownRequestRef.current = null
+    setSlowdownPending(false)
+    setResumeSpeed(null)
+  }, [])
 
   /**
    * `mine` credits the counters the console was already carrying to this walk; otherwise they become
@@ -264,8 +273,9 @@ export function App() {
     else if (now - disagreeSinceRef.current >= BELT_STATE_SETTLE_MS) {
       disagreeSinceRef.current = null
       setRunning(observed)
+      if (!observed) clearSlowdown()
     }
-  }, [data, running])
+  }, [data, running, clearSlowdown])
 
   const setBeltState = useCallback((next: boolean) => {
     disagreeSinceRef.current = null
@@ -305,6 +315,7 @@ export function App() {
 
   const stopBelt = useCallback(async () => {
     clearPendingCommands()
+    clearSlowdown()
     setBeltState(false)
     setTargetSpeed(null)
     const channel = controlRef.current
@@ -315,7 +326,7 @@ export function App() {
     } catch (err) {
       setControlMessage(describeError(err))
     }
-  }, [clearPendingCommands])
+  }, [clearPendingCommands, clearSlowdown, setBeltState])
 
   const attach = useCallback(
     async (device: BluetoothDevice) => {
@@ -343,6 +354,9 @@ export function App() {
 
   const onDisconnected = useCallback(async () => {
     stopRef.current = null
+    clearPendingCommands()
+    clearSlowdown()
+    setTargetSpeed(null)
     if (manualRef.current) return
     setPhase('connecting')
     for (let attempt = 1; attempt <= RECONNECT_ATTEMPTS; attempt++) {
@@ -359,7 +373,7 @@ export function App() {
     }
     setPhase('idle')
     setError('Could not restore the connection. Check that the console is on and no phone is holding it.')
-  }, [attach])
+  }, [attach, clearPendingCommands, clearSlowdown])
 
   const connect = useCallback(async () => {
     setError(null)
@@ -391,6 +405,7 @@ export function App() {
   const disconnect = useCallback(async () => {
     manualRef.current = true
     clearPendingCommands()
+    clearSlowdown()
     await stopRef.current?.()
     stopRef.current = null
     await controlRef.current?.close()
@@ -404,7 +419,7 @@ export function App() {
     setPhase('idle')
     const batch = bufferRef.current.splice(0, bufferRef.current.length)
     if (batch.length > 0) await window.vifito.logSamples(batch).then(refreshToday)
-  }, [clearPendingCommands, refreshToday])
+  }, [clearPendingCommands, clearSlowdown, refreshToday, setBeltState])
 
   // stable sort, the likely treadmill goes up, the rest keeps the scan order
   const sortedDevices = [...devices].sort((a, b) => Number(isLikelyTreadmill(b)) - Number(isLikelyTreadmill(a)))
@@ -413,6 +428,7 @@ export function App() {
   const shownSpeed = targetSpeed ?? data?.speedKmh ?? info?.speedRange?.min ?? 0
   const shownIncline = targetIncline ?? data?.inclinePercent ?? info?.inclinationRange?.min ?? 0
   const lowestSpeed = quantize(info?.speedRange?.min ?? SPEED_STEP, info?.speedRange, SPEED_STEP)
+  const canSlowdown = shownSpeed > 1 && quantize(1, info?.speedRange, SPEED_STEP) === 1
   // Trust the reported speed when the console sends it. A console that never sends the field would
   // otherwise hide the stop button while the belt runs, so there the app's own start decides.
   // A console that reports no target is not necessarily unable to obey one; cheap consoles get their
@@ -421,6 +437,8 @@ export function App() {
     info?.features !== undefined && !info.features.targets.includes(target)
 
   const nudgeSpeed = (direction: number) => {
+    if (slowdownRequestRef.current) return
+    clearSlowdown()
     const next = quantize(shownSpeed + direction * SPEED_STEP, info?.speedRange, SPEED_STEP)
     setTargetSpeed(next)
     schedule(speedTimerRef, () => encodeSetSpeed(next))
@@ -435,11 +453,33 @@ export function App() {
   // A preset is one decision, so it goes out at once. The 250 ms wait exists for a run of clicks on
   // the steppers, and any such wait still pending would land after the preset and undo it.
   const applySpeed = (value: number) => {
+    if (slowdownRequestRef.current) return
+    clearSlowdown()
     if (speedTimerRef.current) clearTimeout(speedTimerRef.current)
     speedTimerRef.current = null
     const next = quantize(value, info?.speedRange, SPEED_STEP)
     setTargetSpeed(next)
     void runCommand(encodeSetSpeed(next))
+  }
+
+  const toggleSlowdown = async () => {
+    if (!running || phase !== 'connected' || slowdownRequestRef.current) return
+    if (resumeSpeed === null && !canSlowdown) return
+    if (speedTimerRef.current) clearTimeout(speedTimerRef.current)
+    speedTimerRef.current = null
+    const request = Symbol()
+    slowdownRequestRef.current = request
+    setSlowdownPending(true)
+    const next = resumeSpeed ?? 1
+    const accepted = await runCommand(encodeSetSpeed(next))
+    // Stop or disconnect invalidates the request even if the console accepts it afterwards.
+    if (slowdownRequestRef.current !== request) return
+    if (accepted?.ok) {
+      setTargetSpeed(next)
+      setResumeSpeed(resumeSpeed === null ? shownSpeed : null)
+    }
+    slowdownRequestRef.current = null
+    setSlowdownPending(false)
   }
 
   const applyIncline = (value: number) => {
@@ -609,12 +649,12 @@ export function App() {
                       <div className="control-steppers">
                         <div className="control-row">
                           <span className="control-label">Speed</span>
-                          <button onClick={() => nudgeSpeed(-1)}>−</button>
+                          <button disabled={slowdownPending} onClick={() => nudgeSpeed(-1)}>−</button>
                           <span className="control-value">
                             {shownSpeed.toFixed(1)}
                             <span className="unit">km/h</span>
                           </span>
-                          <button onClick={() => nudgeSpeed(1)}>+</button>
+                          <button disabled={slowdownPending} onClick={() => nudgeSpeed(1)}>+</button>
                           <span className="control-note">
                             steps of {SPEED_STEP}
                             {info?.speedRange
@@ -648,7 +688,7 @@ export function App() {
                           {presets.speedsKmh.map((preset, index) => (
                             <button
                               key={`speed-${index}`}
-                              disabled={outOfRange(preset, info?.speedRange)}
+                              disabled={slowdownPending || outOfRange(preset, info?.speedRange)}
                               onClick={() => applySpeed(preset)}
                             >
                               {formatPreset(preset)}
@@ -674,9 +714,28 @@ export function App() {
                     </div>
 
                     {running ? (
-                      <button className="big stop" onClick={() => void stopBelt()}>
-                        STOP
-                      </button>
+                      <div className="belt-actions">
+                        <button className="big stop" onClick={() => void stopBelt()}>
+                          STOP
+                        </button>
+                        <button
+                          className="big slowdown"
+                          aria-pressed={resumeSpeed !== null}
+                          aria-label={resumeSpeed === null ? 'Slowdown to 1 km/h' : `Resume at ${resumeSpeed.toFixed(1)} km/h`}
+                          disabled={slowdownPending || (resumeSpeed === null && !canSlowdown)}
+                          onClick={() => void toggleSlowdown()}
+                        >
+                          {resumeSpeed === null ? 'Slowdown' : (
+                            <>
+                              <svg className="pause-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <rect x="5" y="3" width="5" height="18" rx="1" />
+                                <rect x="14" y="3" width="5" height="18" rx="1" />
+                              </svg>
+                              <span>Resume {resumeSpeed.toFixed(1)} km/h</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     ) : (
                       <button className="big primary" onClick={() => void startBelt()}>
                         START AT {lowestSpeed.toFixed(1)} KM/H
