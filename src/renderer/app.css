@@ -157,6 +157,25 @@ main {
   border-radius: 6px;
 }
 
+/* The shared update widgets take their colours from these properties. */
+.statusbar {
+  --auto-update-muted: var(--muted);
+  --auto-update-working: var(--warn);
+  --auto-update-attention: var(--accent);
+  --auto-update-ready: var(--ok);
+  --auto-update-failed: var(--err);
+  --auto-update-accent: var(--accent);
+  --auto-update-accent-text: #06202c;
+  --auto-update-border: var(--line);
+  --auto-update-surface: var(--panel-2);
+  --auto-update-surface-text: var(--text);
+  --auto-update-radius: 8px;
+}
+
+.statusbar .auto-update-panel {
+  font-size: 14px;
+}
+
 .error {
   border: 1px solid var(--err);
   background: rgba(255, 107, 107, 0.08);

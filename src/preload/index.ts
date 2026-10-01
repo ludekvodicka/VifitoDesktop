@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { Plan, PlansSnapshot } from '../shared/plans'
 import type { AppSettings } from '../shared/settings'
 import type { DaySummary, Sample, StatsOverview } from '../shared/stats'
-import type { UpdateState } from '../shared/update'
+import { AutoUpdateBridge } from '../../shared/electron/autoUpdate/preload/autoUpdateBridge'
 
 export type ScannedDevice = { deviceId: string; deviceName: string }
 
@@ -52,24 +52,7 @@ const api = {
   getVersion(): Promise<string> {
     return ipcRenderer.invoke('app:version')
   },
-  /** The state as the main process knows it now, for a renderer that mounted after the check. */
-  getUpdateState(): Promise<UpdateState> {
-    return ipcRenderer.invoke('update:get')
-  },
-  onUpdateState(callback: (state: UpdateState) => void): () => void {
-    const handler = (_event: unknown, state: UpdateState) => callback(state)
-    ipcRenderer.on('update:state', handler)
-    return () => {
-      ipcRenderer.off('update:state', handler)
-    }
-  },
-  checkForUpdate(): Promise<void> {
-    return ipcRenderer.invoke('update:check')
-  },
-  /** Quits and installs what was downloaded. Nothing happens unless an update is ready. */
-  installUpdate(): Promise<void> {
-    return ipcRenderer.invoke('update:install')
-  },
+  autoUpdate: AutoUpdateBridge.create(ipcRenderer),
 }
 
 export type VifitoApi = typeof api

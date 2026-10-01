@@ -2,58 +2,42 @@
 
 ## Decision
 
-The updater's progress is application state, not a log line. `src/main/update.ts` keeps one
-`UpdateState` value, and the status bar along the bottom of the window draws it next to the running
-version. Before this, `electron-updater` wrote to the console and the only visible sign of a new
-build was the notification the operating system raised after the download had already finished.
+Updates come from two shared members under `shared/electron/`: `autoUpdate` (the updater logic for the main
+process, preload and renderer) and `autoUpdateWidgets` (the indicator and the panel). Several Electron apps use the
+same members, so the update behavior and its tests live in one place. Before this, Vifito had its own 60-line
+updater with no periodic check, no portable or macOS handling and a second notification from the operating system.
 
-The state is a discriminated union with seven cases, defined in `src/shared/update.ts`:
+The members are mounted from a shared source repository. A clone of this repository carries them as ordinary files,
+so the public build needs nothing else; a newer version of the members arrives with the next commit of this app.
 
-| kind | reached when |
+## Behavior
+
+| Build | What happens |
 | --- | --- |
-| `disabled` | the app is not packaged, so no check runs at all |
-| `checking` | a check is on its way to GitHub Releases |
-| `current` | the feed offers nothing newer |
-| `available` | a newer version exists; the download starts by itself |
-| `downloading` | carries the percentage the updater reports |
-| `downloaded` | the build is on disk and installs on quit |
-| `failed` | carries the message, shown as a tooltip |
+| Started from source | "Updates off": no check runs, which keeps development traffic away from the release feed |
+| Windows `Setup`, Linux AppImage or deb | first check 45 seconds after start, then every 2 hours; a new version downloads in the background; "Restart and install" applies it, otherwise it installs on the next normal quit |
+| Windows `Portable`, unsigned macOS | check only; the panel shows the new version and opens its release page |
+| A build without `app-update.yml` (a `--dir` build) | "Updates off: This build has no update feed." |
 
-`describeUpdate()` turns a state into the bar's text and its colour, and throws on a kind it does not
-know rather than leaving the previous label on screen. It is pure, so the wording is unit tested
-without an updater.
+- A failed background check keeps what the bar showed before: being offline is not an update failure. A failed
+  "Check now" or download shows "Update failed" with a retry.
+- The panel shows the release notes of the new version as plain text and offers "View on GitHub". The main process
+  composes the release page URL and opens only `https://github.com/...`.
+- The operating system notification of `checkForUpdatesAndNotify` is gone; the status bar is the one signal.
 
 ## How the state travels
 
-The main process holds it. Each `autoUpdater` event sets a new state, which is sent to every open
-window rather than to one remembered window: the renderer can be reloaded, and macOS builds a second
-window from the `activate` handler. Both then draw the current state without the updater being
-re-wired.
-
-The renderer pulls `update:get` on mount as well as subscribing to `update:state`. Without the pull,
-a check that finished before the window mounted would leave the bar empty until the next event, which
-in a healthy app never comes.
-
-## What the buttons do
-
-- **Restart and install** appears only in the `downloaded` state and calls `quitAndInstall()`.
-- **Check now** repeats the check, because it otherwise runs once at startup and a long-running app
-  would never notice a release. It is disabled while a check or download runs, and once a build is
-  downloaded: checking again there would only throw the ready state away and download the same file
-  a second time.
-
-## Limits
-
-Windows `Portable` and the unsigned macOS build cannot install an update over themselves, so they
-never reach `downloaded`; for them the bar is a notice that a new version exists. Windows `Setup` and
-the Linux packages complete the whole path. A build started from source stays at `disabled`, which
-keeps development traffic away from the release feed.
+The main process holds the state and sends every change to every open window, not to one remembered window: the
+renderer can be reloaded, and macOS builds a second window from the `activate` handler. The renderer subscribes
+before it pulls the current state, so a check that finished before the window mounted still shows.
 
 ## Entry points
 
-- `src/shared/update.ts` owns the state type and the state-to-label mapping.
-- `src/main/update.ts` subscribes to `autoUpdater`, holds the state, broadcasts it, and exposes the
-  check and install actions.
-- `src/main/index.ts` handles `app:version`, `update:get`, `update:check` and `update:install`.
-- `src/preload/index.ts` exposes them, with `onUpdateState` following the `onDevices` pattern.
-- `src/renderer/StatusBar.tsx` draws the bar; `src/renderer/App.tsx` mounts it below `main`.
+- `src/main/index.ts` creates `AutoUpdateMain` with the release page of this repository, starts it before the
+  window opens and stops it on `will-quit`.
+- `src/preload/index.ts` nests `AutoUpdateBridge.create(ipcRenderer)` as `window.vifito.autoUpdate`.
+- `src/renderer/StatusBar.tsx` draws the version, the shared `AutoUpdateIndicator` and `AutoUpdatePanel`;
+  `src/renderer/App.tsx` mounts it below `main`.
+- `src/renderer/app.css` maps the app's colours onto the widgets' `--auto-update-*` custom properties.
+- `shared/electron/autoUpdate/README.md` documents the members; their tests run in the shared source, so
+  `tsconfig.json` excludes them here.

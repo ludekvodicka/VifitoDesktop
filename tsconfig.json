@@ -13,5 +13,6 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "electron.vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "shared", "electron.vite.config.ts", "vitest.config.ts"],
+  "exclude": ["shared/**/*.test.ts", "shared/**/*.test.tsx"]
 }

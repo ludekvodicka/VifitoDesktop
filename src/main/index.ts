@@ -7,7 +7,7 @@ import { appendSamples } from './session-log'
 import { readSettings, writeSettings } from './settings'
 import { createStatsStore } from './stats-store'
 import type { Sample } from '../shared/stats'
-import { checkForUpdates, getUpdateState, installUpdate, startAutoUpdates } from './update'
+import { AutoUpdateMain } from '../../shared/electron/autoUpdate/main/autoUpdateMain'
 
 /** Callback from the select-bluetooth-device event. Held until the user picks a device. */
 let pickDevice: ((deviceId: string) => void) | null = null
@@ -98,16 +98,21 @@ ipcMain.handle('plans:remove', async (_event, id: unknown) => plansStore.remove(
 
 ipcMain.handle('app:version', async () => app.getVersion())
 
-ipcMain.handle('update:get', async () => getUpdateState())
-
-ipcMain.handle('update:check', async () => checkForUpdates())
-
-ipcMain.handle('update:install', async () => installUpdate())
+let autoUpdate: AutoUpdateMain | null = null
 
 void app.whenReady().then(() => {
+  // The update handlers listen before the window loads, so the status bar never asks an empty channel.
+  autoUpdate = new AutoUpdateMain({
+    releasePageUrl: (version) =>
+      version
+        ? `https://github.com/ludekvodicka/VifitoDesktop/releases/tag/v${version}`
+        : 'https://github.com/ludekvodicka/VifitoDesktop/releases',
+  })
+  autoUpdate.start()
   createWindow()
-  startAutoUpdates()
 })
+
+app.on('will-quit', () => autoUpdate?.stop())
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()

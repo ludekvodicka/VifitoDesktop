@@ -17,6 +17,7 @@ data/
 AGENTS.md
 CLAUDE.md
 .axapp.json
+/shared/**/.atomix-shared.json
 .env
 .env.*
 *.local.json
