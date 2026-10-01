@@ -8,8 +8,8 @@
 
 A small desktop app that connects to a **VIFITO Rio 45 iR** walking treadmill over Bluetooth Low
 Energy and shows what the console is doing: speed, incline, distance, time, calories and heart rate,
-plus a running total of how far you walked today. From the same screen you can set the speed and the
-incline, and stop the belt.
+plus a running total of how far you walked today. You can set the speed and incline, stop the belt,
+and run training plans with timed phases.
 
 It speaks the standard Bluetooth SIG **Fitness Machine Service** (FTMS, `0x1826`), the same protocol
 Zwift, Kinomap and FitShow use, so it has a fair chance of working with other treadmills whose
@@ -27,6 +27,29 @@ a pause icon and the speed that a second click will restore.
 ![Live data with simulated walking data and the large pause button beside STOP](docs/screenshot.png)
 
 Simulated walking data with Slowdown active at 1 km/h and a saved speed of 5.2 km/h.
+
+### Training plans
+
+Create named, colored plans on the **Plans** tab. Each phase has a speed, an incline and a duration
+in minutes and seconds, plus an optional name. **Play** runs the saved plan, one phase at a time,
+and marks the active phase in blue. Only one plan can run at a time.
+
+The run strip stays visible on every tab with the current phase, its countdown, the total time
+remaining, **End plan** and **STOP**. The last phase stops the belt and shows a **Finished** medal
+with the saved plan duration and the distance walked, if the console reported it. The medal stays
+until you close it or start another plan; it is not saved.
+
+Plans stay editable during a run. **Save changes** applies a speed or incline change to the running
+phase immediately; later phases use their saved values when reached. Manual speed and incline
+choices last until the next phase. **Slowdown** pauses the plan timer while the belt keeps moving
+at 1 km/h. Saving during that hold sends no targets; restoring the saved speed or choosing a manual
+speed continues the timer. If a phase command is refused, the timer pauses and **Retry** sends the
+phase targets again. **End plan** leaves the belt at its current speed and incline.
+
+![The Plans tab with a running plan, its active phase and the run strip](docs/screenshot-plans.png)
+
+Simulated walking data with Morning walk running. The active phase is blue; End plan and STOP stay
+available in the strip on every tab.
 
 ### Last 14 days
 
@@ -65,17 +88,31 @@ answered and the answer is shown in the Control panel, refusals like *Op Code no
 
 Moving a belt from software deserves care, so:
 
-- **Nothing is ever sent on its own.** Every command comes from a click. The app does not restore a
-  previous speed automatically, does not resume after a reconnect, and sends nothing at startup.
+- **Nothing is sent on its own, outside a plan you started.** Every command outside that run comes
+  from a click. The app does not restore a previous speed automatically, does not resume after a
+  reconnect, and sends nothing at startup.
+- **Play authorizes one plan run, and only that run.** The run sends Set Target Speed and Set Target
+  Inclination when it starts, at each phase boundary, when you click Retry after a refusal, and when
+  you save a speed or incline change to the running phase. When the last phase ends, it stops the
+  belt. Nothing else is sent on its behalf.
+- **A run ends on STOP, End plan, a disconnect, or a belt stopped on the console** (its stop button
+  or the safety key), and when the app closes. It is never resumed after a reconnect or restored at
+  startup. End plan and closing the app leave the belt at its current speed and incline.
 - **Control is taken lazily**, on the first command you issue, not when you connect. Some consoles
   lock their own panel once a remote takes over, and just watching the numbers must not do that.
 - **Start always starts at the lowest speed** the console supports, and the button says which speed
   that is before you press it. It also refuses to start at all unless the console has accepted that
-  speed first, so the belt never starts at whatever the console had in mind.
-- **Stop is one click and jumps ahead of anything queued.**
+  speed first, so the belt never starts at whatever the console had in mind. A plan starts a stopped
+  belt the same way. STOP cancels a pending start, so a late speed acknowledgement cannot send Start
+  afterwards.
+- **Stop is one click and jumps ahead of anything queued**, including a running plan. It is also
+  available in the run strip on every tab while a plan is active.
+- **Maximum incline** from Settings caps every incline the app sends. Leave it empty for no extra
+  limit. Saving a lower maximum sends nothing; it applies to the next incline command.
 - **Slowdown keeps the belt moving at 1 km/h.** Click it again to restore the saved speed. Stop,
   disconnecting, or choosing another speed clears the saved speed. It is available above 1 km/h
-  when the console's speed range supports 1 km/h.
+  when the console's speed range supports 1 km/h. During a plan it pauses the plan's timer as soon as
+  requested. A refused slowdown, an accepted restore, or a manual speed choice continues the timer.
 - The console's own stop button and safety key are unaffected. This app is an extra remote, not a
   replacement for them.
 
@@ -89,10 +126,16 @@ no telemetry, no account, and no network traffic other than the update check aga
 | installed | `<userData>/data/` (`%APPDATA%/Vifito Desktop` on Windows, `~/Library/Application Support/Vifito Desktop` on macOS, `~/.config/Vifito Desktop` on Linux) |
 | from source | `data/` in the project directory |
 
-Inside it, `sessions/YYYY-MM-DD.jsonl` is the raw log, one JSON object per line, and it is the only
-source of truth. `stats/YYYY-MM-DD.json` holds the workout records the Stats tab shows; it is a cache
-computed from the log and is rebuilt whenever it is missing or out of date. Delete a day's `.jsonl`
-and that day is gone for good; delete its `.json` and it comes straight back.
+Inside it, `sessions/YYYY-MM-DD.jsonl` is the raw log, one JSON object per line, and it is the source
+of truth for workout history. `stats/YYYY-MM-DD.json` holds the workout records the Stats tab shows;
+it is a cache computed from the log and is rebuilt whenever it is missing or out of date. Delete a
+day's `.jsonl` and that day is gone for good; delete its `.json` and it comes straight back.
+
+`settings.json` holds your settings. `plans.json` holds the saved training plans separately. Plan
+changes are written to a temporary file and then renamed over `plans.json`. If the file contains
+invalid JSON or has an invalid top-level structure, it is preserved as
+`plans.corrupt-<stamp>.json`; the Plans tab shows the recovery path and starts with an empty list.
+Runs and medals are never restored from this file.
 
 Because the installed app writes under your own account directory, two people on the same treadmill
 keep separate histories as long as they use separate Windows accounts. The app has no login and no
@@ -130,19 +173,21 @@ If the console was already counting when you connect, the app asks whether that 
 it records anything. The console keeps counting with no computer attached, so those kilometres may be
 yours from earlier, or they may belong to whoever used the treadmill before you.
 
-The app shows four tabs by default:
+The app shows five tabs by default:
 
 - **Live data** - tiles, the Control panel, a bar chart of the last 14 days and a speed chart. The
   Control panel steps speed and incline by 0.5, snapped to whatever grid the console advertises. It
   shows START while the belt is stopped, STOP and Slowdown once it moves, and prints the console's
   answer to every command.
+- **Plans** - saved training plans and their timed phases, Play, editing during a run, and the
+  completion medal. The active run strip remains visible when you switch tabs.
 - **Stats** - every use of the machine, newest first, grouped by day: when it started, how long it
   ran, the distance, the average and maximum speed and incline, calories, heart rate and the last
   target the app set. Written as you walk, so the current workout is in the list with an *in
   progress* badge.
 - **Settings** - the values shown on the speed and incline preset buttons, your profile for the
-  calorie estimate, plus **Show diagnostics**. Diagnostics is shown by default; clear the checkbox
-  and save to hide its tab completely.
+  calorie estimate, the optional **Maximum incline**, plus **Show diagnostics**. Diagnostics is
+  shown by default; clear the checkbox and save to hide its tab completely.
 - **Diagnostics** - every GATT service and characteristic the console exposes, raw frames and status
   notifications, plus the full FTMS field and command inventory. It compares what the console claims
   to support with what actually arrived over the air; the two often disagree, and the received data
@@ -186,8 +231,9 @@ value seen, which survives the console resetting them between workouts.
 - Control depends entirely on the console's firmware. Plenty of consoles expose a Control Point and
   still refuse every command, and their advertised capabilities are unreliable in both directions.
   The Control panel keeps its buttons live and lets the console answer for itself.
-- Speed and incline are stepped by 0.5 from the app. There is no slider and no direct entry, and the
-  belt is always started at the console's lowest speed.
+- Live data steps speed and incline by 0.5. There is no slider; exact values go into a plan's
+  phases and are snapped to the console's grid and allowed range. The belt is always started at the
+  console's lowest speed.
 - Cheap USB BLE dongles vary. If the connection keeps dropping, try another adapter before blaming
   the app.
 

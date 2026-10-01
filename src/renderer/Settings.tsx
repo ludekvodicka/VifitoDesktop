@@ -9,12 +9,13 @@ type Props = {
 
 type PresetDraft = { speedsKmh: string[]; inclinesPercent: string[] }
 type ProfileDraft = { ageYears: string; sex: string; weightKg: string; heightCm: string }
-type Draft = PresetDraft & { showDiagnostics: boolean; profile: ProfileDraft }
+type Draft = PresetDraft & { showDiagnostics: boolean; profile: ProfileDraft; maxInclinePercent: string }
 
 const toDraft = (settings: AppSettings): Draft => ({
   speedsKmh: settings.presets.speedsKmh.map(String),
   inclinesPercent: settings.presets.inclinesPercent.map(String),
   showDiagnostics: settings.showDiagnostics,
+  maxInclinePercent: settings.maxInclinePercent === null ? '' : String(settings.maxInclinePercent),
   profile: {
     ageYears: settings.profile.ageYears === null ? '' : String(settings.profile.ageYears),
     sex: settings.profile.sex ?? '',
@@ -50,6 +51,7 @@ export function Settings({ settings, onSaved }: Props) {
         presets: normalizePresets(draft),
         showDiagnostics: draft.showDiagnostics,
         profile: draft.profile,
+        maxInclinePercent: draft.maxInclinePercent,
       }),
     )
     onSaved(stored)
@@ -111,6 +113,30 @@ export function Settings({ settings, onSaved }: Props) {
 
       {row('Speed presets', 'speedsKmh', 'km/h', '0.5')}
       {row('Incline presets', 'inclinesPercent', '%', '0.5')}
+
+      <div className="settings-heading">Treadmill</div>
+      <div className="hint" style={{ marginBottom: 12 }}>
+        The app never sends a higher incline: the incline buttons stop at it, presets above it grey out,
+        and plan phases above it run at the maximum. Useful under a desk, for example 12 of the console's
+        15 %. Leave it empty for no limit.
+      </div>
+      <div className="settings-fields">
+        <label className="settings-field">
+          <span>Maximum incline <span className="control-note">(%)</span></span>
+          <input
+            type="number"
+            step="0.1"
+            min="0"
+            max="30"
+            placeholder="no limit"
+            value={draft.maxInclinePercent}
+            onChange={(event) => {
+              setSaved(null)
+              setDraft((previous) => ({ ...previous, maxInclinePercent: event.target.value }))
+            }}
+          />
+        </label>
+      </div>
 
       <div className="settings-heading">Profile</div>
       <div className="hint" style={{ marginBottom: 12 }}>

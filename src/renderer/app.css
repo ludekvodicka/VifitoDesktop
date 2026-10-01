@@ -388,7 +388,19 @@ button.slowdown[aria-pressed='true'] {
   font-variant-numeric: tabular-nums;
 }
 
-.settings-row input[type='number']:focus {
+.plan-title-field input,
+.plan-phase-name {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.settings-row input[type='number']:focus,
+.plan-phase-name:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -469,6 +481,220 @@ button.slowdown[aria-pressed='true'] {
   gap: 10px;
   border-top: 1px solid var(--line);
   padding-top: 14px;
+}
+
+.plan {
+  min-width: 0;
+}
+
+.plan-head,
+.plan-actions,
+.plan-notice,
+.run-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.plan-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.plan-head .plan-name {
+  flex: 1;
+  min-width: 100px;
+}
+
+button.play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ok);
+  border-color: var(--ok);
+  letter-spacing: normal;
+}
+
+button.play:hover:not(:disabled) {
+  color: var(--bg);
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.play-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  fill: currentColor;
+}
+
+.chevron {
+  display: flex;
+  margin-left: auto;
+  padding: 7px;
+}
+
+.chevron svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.chevron[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.plan-editor {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-field.plan-title-field input {
+  width: 100%;
+  max-width: 480px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+}
+
+.swatch[aria-pressed='true'] {
+  border-color: var(--bg);
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.plan-actions {
+  margin: 12px 0;
+}
+
+.plan-actions .control-confirm {
+  flex-wrap: wrap;
+}
+
+.plan-phase {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.plan-phase.active {
+  border-color: var(--accent);
+  background: rgba(76, 194, 255, 0.08);
+}
+
+.plan-phase-name {
+  flex: 1;
+  width: 160px;
+  min-width: 100px;
+}
+
+.plan-phase-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plan-warning {
+  color: var(--warn);
+}
+
+.plan-phase .plan-warning {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+
+.plan-problems {
+  color: var(--err);
+  padding-left: 20px;
+}
+
+.plan-note,
+.plan > .plan-notice {
+  margin-top: 10px;
+}
+
+.plan-notice > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.plans > .plan-notice {
+  margin: 0 0 14px;
+}
+
+.plan-new fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.countdown {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.run-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 10px 16px;
+  padding: 10px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.run-strip .plan-name {
+  max-width: 240px;
+}
+
+.run-actions {
+  margin-left: auto;
+}
+
+.medal {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+}
+
+.plan > .medal {
+  margin-top: 12px;
+}
+
+.medal-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  color: var(--warn);
 }
 
 .chart {

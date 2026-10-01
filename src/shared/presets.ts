@@ -20,7 +20,7 @@ const LIMITS = {
  * Deliberately not `Number(value)`: that turns null, an empty string and false into 0, so an emptied
  * input field or a null in the file would read as a real zero instead of falling back.
  */
-function toNumber(value: unknown): number | null {
+export function toNumber(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   if (typeof value !== 'string' || value.trim() === '') return null
   const parsed = Number(value)

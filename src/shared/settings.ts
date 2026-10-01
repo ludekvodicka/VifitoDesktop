@@ -14,6 +14,8 @@ export type AppSettings = {
   presets: Presets
   showDiagnostics: boolean
   profile: Profile
+  /** Highest incline the app may send, in %. null = no limit. */
+  maxInclinePercent: number | null
 }
 
 export const DEFAULT_PROFILE: Profile = {
@@ -27,22 +29,24 @@ export const DEFAULT_SETTINGS: AppSettings = {
   presets: DEFAULT_PRESETS,
   showDiagnostics: true,
   profile: DEFAULT_PROFILE,
+  maxInclinePercent: null,
 }
 
-const PROFILE_LIMITS = {
+const NUMBER_LIMITS = {
   ageYears: { min: 5, max: 120 },
   weightKg: { min: 20, max: 300 },
   heightCm: { min: 80, max: 250 },
+  maxInclinePercent: { min: 0, max: 30 },
 } as const
 
 /**
  * Same reasoning as the presets normalizer: Number(null) and Number('') are 0, so an emptied field
  * would read as a real value. Only a number or a non-empty numeric string counts.
  */
-function clampedOrNull(value: unknown, key: keyof typeof PROFILE_LIMITS): number | null {
+function clampedOrNull(value: unknown, key: keyof typeof NUMBER_LIMITS): number | null {
   const candidate = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN
   if (!Number.isFinite(candidate)) return null
-  const { min, max } = PROFILE_LIMITS[key]
+  const { min, max } = NUMBER_LIMITS[key]
   return Math.round(Math.min(max, Math.max(min, candidate)) * 10) / 10
 }
 
@@ -63,5 +67,6 @@ export function normalizeSettings(value: unknown): AppSettings {
     showDiagnostics:
       typeof source.showDiagnostics === 'boolean' ? source.showDiagnostics : DEFAULT_SETTINGS.showDiagnostics,
     profile: normalizeProfile(source.profile),
+    maxInclinePercent: clampedOrNull(source.maxInclinePercent, 'maxInclinePercent'),
   }
 }

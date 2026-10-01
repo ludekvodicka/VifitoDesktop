@@ -28,9 +28,11 @@ Diagnostics tab.
 - Keep each pull request focused and explain the user-visible behavior.
 - Add or update parser tests when you change frame decoding, using captured hex frames.
 - Never commit workout logs, device identifiers, or local machine paths.
-- Keep the safety rules around Control Point writes: no command without a user action, Start only at
-  the lowest speed and only once the console has accepted it, Stop ahead of anything queued and never
-  behind a confirmation. A change that weakens any of these needs a stated reason.
+- Keep the safety rules around Control Point writes: no command without a user action, where Play
+  counts as the action for the speed, incline and final Stop commands of that one plan run and for
+  nothing after it ends; Start only at the lowest speed and only once the console has accepted it;
+  Stop ahead of anything queued, including a running plan, and never behind a confirmation; never an
+  incline above the configured maximum. A change that weakens any of these needs a stated reason.
 
 Source changes use ordinary Git commits and pull requests. Releases are built from version tags on
 the main branch. Local AI checkpoints and workout logs are ignored and never belong in Git commits.

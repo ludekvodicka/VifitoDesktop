@@ -101,6 +101,20 @@ export function quantize(value: number, range: Range | undefined, fallbackStep: 
   const bounded = Math.max(min, max === undefined ? snapped : Math.min(max, snapped))
   // Binary fractions of 0.1 steps accumulate visible noise (2.9000000000000004), so pin the result
   // to the precision the step itself carries.
-  const decimals = (String(step).split('.')[1] ?? '').length
-  return Number(bounded.toFixed(decimals))
+  return Number(bounded.toFixed(stepDecimals(step)))
+}
+
+/** Floors the cap to the console grid; null means no supported incline satisfies the cap. */
+export function limitInclineRange(range: Range | undefined, maxPercent: number | null, fallbackStep: number): Range | null | undefined {
+  if (maxPercent === null) return range
+  const step = range?.step && range.step > 0 ? range.step : fallbackStep
+  const min = range?.min ?? 0
+  if (maxPercent < min) return null
+  const floored = min + Math.floor((maxPercent - min) / step + 1e-9) * step
+  const max = Math.min(range?.max ?? floored, floored)
+  return { min, max: Number(max.toFixed(stepDecimals(step))), step }
+}
+
+function stepDecimals(step: number): number {
+  return (String(step).split('.')[1] ?? '').length
 }

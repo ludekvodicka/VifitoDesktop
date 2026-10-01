@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PRESETS } from './presets'
-import { DEFAULT_PROFILE, normalizeSettings } from './settings'
+import { DEFAULT_PROFILE, DEFAULT_SETTINGS, normalizeSettings } from './settings'
 
 describe('normalizeSettings', () => {
   it('enables diagnostics when migrating the old presets-only format', () => {
@@ -8,6 +8,7 @@ describe('normalizeSettings', () => {
       presets: DEFAULT_PRESETS,
       showDiagnostics: true,
       profile: DEFAULT_PROFILE,
+      maxInclinePercent: null,
     })
   })
 
@@ -33,7 +34,34 @@ describe('normalizeSettings', () => {
       },
       showDiagnostics: false,
       profile: DEFAULT_PROFILE,
+      maxInclinePercent: null,
     })
+  })
+})
+
+describe('normalizeSettings maximum incline', () => {
+  it('has no limit by default or when reading an old settings file', () => {
+    expect(DEFAULT_SETTINGS.maxInclinePercent).toBeNull()
+    expect(normalizeSettings({ presets: DEFAULT_PRESETS }).maxInclinePercent).toBeNull()
+  })
+
+  it('treats an empty or invalid value as no limit', () => {
+    for (const maxInclinePercent of [undefined, '', ' ', null, 'high', false, {}, [], NaN, Infinity, -Infinity])
+      expect(normalizeSettings({ maxInclinePercent }).maxInclinePercent).toBeNull()
+  })
+
+  it('accepts numeric strings and keeps zero as an explicit limit', () => {
+    expect(normalizeSettings({ maxInclinePercent: '12' }).maxInclinePercent).toBe(12)
+    expect(normalizeSettings({ maxInclinePercent: 0 }).maxInclinePercent).toBe(0)
+  })
+
+  it('clamps the maximum incline to 0 through 30 percent', () => {
+    expect(normalizeSettings({ maxInclinePercent: 45 }).maxInclinePercent).toBe(30)
+    expect(normalizeSettings({ maxInclinePercent: -1 }).maxInclinePercent).toBe(0)
+  })
+
+  it('rounds the maximum incline to one decimal', () => {
+    expect(normalizeSettings({ maxInclinePercent: 12.34 }).maxInclinePercent).toBe(12.3)
   })
 })
 

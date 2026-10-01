@@ -5,6 +5,7 @@ import {
   encodeSetSpeed,
   encodeStart,
   encodeStop,
+  limitInclineRange,
   parseControlResponse,
   quantize,
 } from './controlPoint'
@@ -102,5 +103,56 @@ describe('quantize', () => {
   it('keeps the result free of binary fraction noise', () => {
     expect(quantize(2.9, { min: 0, max: 15, step: 0.1 }, 0.1)).toBe(2.9)
     expect(quantize(0.7, { min: 0, max: 15, step: 0.1 }, 0.1)).toBe(0.7)
+  })
+})
+
+describe('limitInclineRange', () => {
+  const range = { min: 0, max: 15, step: 0.5 }
+
+  it('keeps the original range when there is no cap', () => {
+    expect(limitInclineRange(range, null, 0.5)).toBe(range)
+    expect(limitInclineRange(undefined, null, 0.5)).toBeUndefined()
+  })
+
+  it('floors the cap to the console grid before quantizing a target', () => {
+    const limited = limitInclineRange(range, 12.3, 0.5)
+    expect(limited).toEqual({ min: 0, max: 12, step: 0.5 })
+    if (limited === null) throw new Error('Expected an allowed incline range')
+    expect(quantize(14, limited, 0.5)).toBe(12)
+    expect(range.max).toBe(15)
+  })
+
+  it('keeps an exact tenth despite binary fraction rounding', () => {
+    expect(limitInclineRange({ min: 0, max: 15, step: 0.1 }, 1.2, 0.5)).toEqual({ min: 0, max: 1.2, step: 0.1 })
+  })
+
+  it('keeps the console maximum when the cap is higher', () => {
+    expect(limitInclineRange(range, 20, 0.5)).toEqual(range)
+  })
+
+  it('uses the fallback grid when no console range is available', () => {
+    expect(limitInclineRange(undefined, 12.3, 0.5)).toEqual({ min: 0, max: 12, step: 0.5 })
+  })
+
+  it.each([0, -0.5])('uses the fallback when the advertised step is %s', (step) => {
+    expect(limitInclineRange({ ...range, step }, 12.3, 0.5)).toEqual({ min: 0, max: 12, step: 0.5 })
+  })
+
+  it('anchors the grid to the console minimum', () => {
+    expect(limitInclineRange({ min: 0.2, max: 15.2, step: 0.5 }, 12.3, 0.5)).toEqual({ min: 0.2, max: 12.2, step: 0.5 })
+  })
+
+  it('allows no incline when the cap is below the console minimum', () => {
+    expect(limitInclineRange({ min: 1, max: 15, step: 0.5 }, 0.5, 0.5)).toBeNull()
+  })
+
+  it.each([1, 1.2])('allows the console minimum when the cap is %s', (cap) => {
+    expect(limitInclineRange({ min: 1, max: 15, step: 0.5 }, cap, 0.5)).toEqual({ min: 1, max: 1, step: 0.5 })
+  })
+
+  it('supports a zero incline cap', () => {
+    const limited = limitInclineRange(range, 0, 0.5)
+    if (limited === null) throw new Error('Expected an allowed incline range')
+    expect(quantize(14, limited, 0.5)).toBe(0)
   })
 })

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ScannedDevice } from '../preload/index'
+import type { Plan, PlanPhase } from '../shared/plans'
 import type { DaySummary, Sample, StatsOverview } from '../shared/stats'
 import {
   dumpGatt,
@@ -15,20 +16,26 @@ import {
   encodeSetIncline,
   encodeSetSpeed,
   encodeStart,
+  limitInclineRange,
   quantize,
   type ControlCommand,
   type ControlResponse,
 } from './ble/controlPoint'
 import { mergeFrames, parseTreadmillData, type Range, type TreadmillData } from './ble/ftms'
 import { Capabilities } from './Capabilities'
+import { Plans } from './Plans'
+import { RunStrip } from './RunStrip'
 import { Settings } from './Settings'
 import { DailyChart, Stats } from './Stats'
 import { StatusBar } from './StatusBar'
+import { distanceUnit, fmtDistance, fmtDuration } from './format'
+import { createPlanRunner, isRunActive, type PhaseTargets, type PlanRunnerDeps, type PlanRunState } from './plans/planRunner'
+import { usePlans } from './plans/usePlans'
 import { UUID } from './ble/uuids'
 import { DEFAULT_SETTINGS, type AppSettings } from '../shared/settings'
 
 type Phase = 'idle' | 'scanning' | 'connecting' | 'connected'
-type Tab = 'live' | 'stats' | 'diag' | 'settings'
+type Tab = 'live' | 'plans' | 'stats' | 'diag' | 'settings'
 type StatusLine = { t: number; label: string; hex: string }
 
 const HISTORY_POINTS = 180
@@ -68,27 +75,12 @@ function fmtNumber(value: number | undefined, digits: number): string {
 }
 
 /** A preset the console cannot reach is shown but not clickable. */
-function outOfRange(value: number, range: Range | undefined): boolean {
-  return range !== undefined && (value < range.min || value > range.max)
+function outOfRange(value: number, range: Range | null | undefined): boolean {
+  return range === null || (range !== undefined && (value < range.min || value > range.max))
 }
 
 function formatPreset(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1)
-}
-
-function fmtDistance(meters: number | undefined): string {
-  if (meters === undefined) return '-'
-  return meters < 1000 ? `${Math.round(meters)}` : (meters / 1000).toFixed(2)
-}
-
-function fmtDuration(seconds: number | undefined): string {
-  if (seconds === undefined) return '-'
-  const total = Math.round(seconds)
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
 }
 
 function Tile({ label, value, unit }: { label: string; value: string; unit?: string }) {
@@ -160,6 +152,7 @@ export function App() {
   const speedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inclineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const slowdownRequestRef = useRef<symbol | null>(null)
+  const startRequestRef = useRef<symbol | null>(null)
   const manualRef = useRef(false)
   const bufferRef = useRef<Sample[]>([])
   /** Last merged state the tiles are built from. */
@@ -171,11 +164,30 @@ export function App() {
   const carryOverPendingRef = useRef(false)
   const carryOverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [run, setRun] = useState<PlanRunState>({ kind: 'idle' })
+  type RunnerLinks = Pick<PlanRunnerDeps, 'send' | 'startBelt' | 'stopBelt' | 'targetsFor' | 'clearPendingCommands'>
+  // The runner outlives each render, so its callbacks read the current settings and console ranges.
+  const links = useRef<RunnerLinks | null>(null)
+  const [runner] = useState(() => createPlanRunner({
+    send: (command) => links.current!.send(command),
+    startBelt: () => links.current!.startBelt(),
+    stopBelt: () => links.current!.stopBelt(),
+    targetsFor: (planPhase) => links.current!.targetsFor(planPhase),
+    clearPendingCommands: () => links.current!.clearPendingCommands(),
+    showTargets: ({ speedKmh, inclinePercent }) => {
+      setTargetSpeed(speedKmh)
+      if (inclinePercent !== null) setTargetIncline(inclinePercent)
+    },
+    onChange: setRun,
+  }))
+  const plansModel = usePlans()
+
   const clearSlowdown = useCallback(() => {
     slowdownRequestRef.current = null
     setSlowdownPending(false)
     setResumeSpeed(null)
-  }, [])
+    runner.resume()
+  }, [runner])
 
   /**
    * `mine` credits the counters the console was already carrying to this walk; otherwise they become
@@ -226,6 +238,7 @@ export function App() {
     const parsed = parseTreadmillData(view)
     const merged = mergeFrames(lastRef.current, parsed)
     lastRef.current = merged
+    runner.recordDistance(merged.distanceM)
     // The console keeps counting with no computer attached, so the first frame of a connection can
     // arrive with a workout already in progress. Whose it is, only the user knows.
     if (!carryOverAskedRef.current && (merged.elapsedSec ?? 0) + (merged.distanceM ?? 0) > 0) {
@@ -251,7 +264,7 @@ export function App() {
       targetSpeedKmh: targetSpeedRef.current ?? undefined,
       targetInclinePercent: targetInclineRef.current ?? undefined,
     })
-  }, [])
+  }, [answerCarryOver, runner])
 
   const onStatus = useCallback((label: string, hex: string) => {
     setStatuses((prev) => [{ t: Date.now(), label, hex }, ...prev].slice(0, 12))
@@ -271,11 +284,12 @@ export function App() {
     const now = Date.now()
     if (disagreeSinceRef.current === null) disagreeSinceRef.current = now
     else if (now - disagreeSinceRef.current >= BELT_STATE_SETTLE_MS) {
+      if (!observed) runner.end('beltStopped')
       disagreeSinceRef.current = null
       setRunning(observed)
       if (!observed) clearSlowdown()
     }
-  }, [data, running, clearSlowdown])
+  }, [data, running, clearSlowdown, runner])
 
   const setBeltState = useCallback((next: boolean) => {
     disagreeSinceRef.current = null
@@ -314,6 +328,8 @@ export function App() {
   )
 
   const stopBelt = useCallback(async () => {
+    runner.end('stop')
+    startRequestRef.current = null
     clearPendingCommands()
     clearSlowdown()
     setBeltState(false)
@@ -326,7 +342,7 @@ export function App() {
     } catch (err) {
       setControlMessage(describeError(err))
     }
-  }, [clearPendingCommands, clearSlowdown, setBeltState])
+  }, [runner, clearPendingCommands, clearSlowdown, setBeltState])
 
   const attach = useCallback(
     async (device: BluetoothDevice) => {
@@ -353,6 +369,8 @@ export function App() {
   )
 
   const onDisconnected = useCallback(async () => {
+    runner.end('disconnected')
+    startRequestRef.current = null
     stopRef.current = null
     clearPendingCommands()
     clearSlowdown()
@@ -373,7 +391,7 @@ export function App() {
     }
     setPhase('idle')
     setError('Could not restore the connection. Check that the console is on and no phone is holding it.')
-  }, [attach, clearPendingCommands, clearSlowdown])
+  }, [runner, attach, clearPendingCommands, clearSlowdown])
 
   const connect = useCallback(async () => {
     setError(null)
@@ -403,6 +421,8 @@ export function App() {
   }, [attach, onDisconnected])
 
   const disconnect = useCallback(async () => {
+    runner.end('disconnected')
+    startRequestRef.current = null
     manualRef.current = true
     clearPendingCommands()
     clearSlowdown()
@@ -419,7 +439,7 @@ export function App() {
     setPhase('idle')
     const batch = bufferRef.current.splice(0, bufferRef.current.length)
     if (batch.length > 0) await window.vifito.logSamples(batch).then(refreshToday)
-  }, [clearPendingCommands, clearSlowdown, refreshToday, setBeltState])
+  }, [runner, clearPendingCommands, clearSlowdown, refreshToday, setBeltState])
 
   // stable sort, the likely treadmill goes up, the rest keeps the scan order
   const sortedDevices = [...devices].sort((a, b) => Number(isLikelyTreadmill(b)) - Number(isLikelyTreadmill(a)))
@@ -428,6 +448,11 @@ export function App() {
   const shownSpeed = targetSpeed ?? data?.speedKmh ?? info?.speedRange?.min ?? 0
   const shownIncline = targetIncline ?? data?.inclinePercent ?? info?.inclinationRange?.min ?? 0
   const lowestSpeed = quantize(info?.speedRange?.min ?? SPEED_STEP, info?.speedRange, SPEED_STEP)
+  const inclineRange = limitInclineRange(info?.inclinationRange, settings.maxInclinePercent, INCLINE_STEP)
+  const targetsFor = (planPhase: PlanPhase): PhaseTargets => ({
+    speedKmh: quantize(planPhase.speedKmh, info?.speedRange, SPEED_STEP),
+    inclinePercent: inclineRange === null ? null : quantize(planPhase.inclinePercent, inclineRange, INCLINE_STEP),
+  })
   const canSlowdown = shownSpeed > 1 && quantize(1, info?.speedRange, SPEED_STEP) === 1
   // Trust the reported speed when the console sends it. A console that never sends the field would
   // otherwise hide the stop button while the belt runs, so there the app's own start decides.
@@ -445,7 +470,8 @@ export function App() {
   }
 
   const nudgeIncline = (direction: number) => {
-    const next = quantize(shownIncline + direction * INCLINE_STEP, info?.inclinationRange, INCLINE_STEP)
+    if (inclineRange === null) return
+    const next = quantize(shownIncline + direction * INCLINE_STEP, inclineRange, INCLINE_STEP)
     setTargetIncline(next)
     schedule(inclineTimerRef, () => encodeSetIncline(next))
   }
@@ -471,27 +497,29 @@ export function App() {
     slowdownRequestRef.current = request
     setSlowdownPending(true)
     const next = resumeSpeed ?? 1
+    const slowing = resumeSpeed === null
+    if (slowing) runner.hold()
     const accepted = await runCommand(encodeSetSpeed(next))
     // Stop or disconnect invalidates the request even if the console accepts it afterwards.
     if (slowdownRequestRef.current !== request) return
     if (accepted?.ok) {
       setTargetSpeed(next)
-      setResumeSpeed(resumeSpeed === null ? shownSpeed : null)
+      setResumeSpeed(slowing ? shownSpeed : null)
     }
+    if (slowing ? !accepted?.ok : accepted?.ok) runner.resume()
     slowdownRequestRef.current = null
     setSlowdownPending(false)
   }
 
   const applyIncline = (value: number) => {
+    if (inclineRange === null) return
     if (inclineTimerRef.current) clearTimeout(inclineTimerRef.current)
     inclineTimerRef.current = null
-    const next = quantize(value, info?.inclinationRange, INCLINE_STEP)
+    const next = quantize(value, inclineRange, INCLINE_STEP)
     setTargetIncline(next)
     void runCommand(encodeSetIncline(next))
   }
 
-  // The target speed goes first and the belt only starts once the console has accepted it. Starting
-  // on a refused target would run the belt at whatever speed the console still had in mind.
   const saveDump = async () => {
     if (!dump) return
     try {
@@ -501,12 +529,50 @@ export function App() {
     }
   }
 
-  const startBelt = async () => {
+  // The start token prevents a late lowest-speed response from queuing Start after STOP.
+  const startBelt = async (): Promise<boolean> => {
+    const request = Symbol()
+    startRequestRef.current = request
     setTargetSpeed(lowestSpeed)
     const accepted = await runCommand(encodeSetSpeed(lowestSpeed))
-    if (!accepted?.ok) return
+    if (startRequestRef.current !== request || !accepted?.ok) return false
     const started = await runCommand(encodeStart())
-    if (started?.ok) setBeltState(true)
+    if (startRequestRef.current !== request || !started?.ok) return false
+    startRequestRef.current = null
+    setBeltState(true)
+    return true
+  }
+
+  useEffect(() => {
+    links.current = { send: runCommand, startBelt, stopBelt, targetsFor, clearPendingCommands }
+  })
+
+  const playDisabledReason = phase !== 'connected'
+    ? 'Connect the treadmill to play a plan.'
+    : !hasControlPoint
+      ? 'The console exposes no Control Point.'
+      : slowdownPending
+        ? 'Wait for the Slowdown command to finish.'
+        : isRunActive(run)
+          ? 'End the current plan before playing another.'
+          : null
+  const canPlay = playDisabledReason === null
+
+  const playPlan = (plan: Plan) => {
+    if (!canPlay) return
+    clearSlowdown()
+    plansModel.expand(plan.id)
+    void runner.play(plan, running)
+  }
+
+  const retryPhase = () => {
+    clearSlowdown()
+    runner.retry()
+  }
+
+  const savePlan = async (id: string) => {
+    const saved = await plansModel.save(id)
+    if (saved) runner.planSaved(saved)
   }
 
   const dotClass = phase === 'connected' ? 'connected' : phase === 'idle' ? (error ? 'failed' : '') : 'working'
@@ -551,6 +617,9 @@ export function App() {
         <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
           Live data
         </button>
+        <button className={tab === 'plans' ? 'active' : ''} onClick={() => setTab('plans')}>
+          Plans
+        </button>
         <button className={tab === 'stats' ? 'active' : ''} onClick={() => setTab('stats')}>
           Stats
         </button>
@@ -566,6 +635,11 @@ export function App() {
           </button>
         )}
       </nav>
+
+      {(isRunActive(run) || run.kind === 'finished') && (
+        <RunStrip run={run} onEndPlan={() => runner.end('endPlan')} onStop={() => void stopBelt()}
+          onRetry={retryPhase} onClose={runner.dismiss} />
+      )}
 
       <main>
         {error && <div className="error">{error}</div>}
@@ -624,7 +698,7 @@ export function App() {
               <Tile
                 label="Distance"
                 value={fmtDistance(data?.distanceM)}
-                unit={data?.distanceM !== undefined && data.distanceM < 1000 ? 'm' : 'km'}
+                unit={distanceUnit(data?.distanceM)}
               />
               <Tile label="Time" value={fmtDuration(data?.elapsedSec)} />
               <Tile label="Calories" value={data?.energyTotalKcal === undefined ? '-' : String(data.energyTotalKcal)} unit="kcal" />
@@ -666,17 +740,22 @@ export function App() {
 
                         <div className="control-row">
                           <span className="control-label">Incline</span>
-                          <button onClick={() => nudgeIncline(-1)}>−</button>
+                          <button disabled={inclineRange === null} onClick={() => nudgeIncline(-1)}>−</button>
                           <span className="control-value">
                             {shownIncline.toFixed(1)}
                             <span className="unit">%</span>
                           </span>
-                          <button onClick={() => nudgeIncline(1)}>+</button>
+                          <button disabled={inclineRange === null} onClick={() => nudgeIncline(1)}>+</button>
                           <span className="control-note">
                             steps of {INCLINE_STEP}
                             {info?.inclinationRange
                               ? `, range ${info.inclinationRange.min.toFixed(1)} - ${info.inclinationRange.max.toFixed(1)}`
                               : ', range unknown'}
+                            {inclineRange === null &&
+                              `, console minimum ${info?.inclinationRange?.min.toFixed(1)} % is above the maximum ${settings.maxInclinePercent?.toFixed(1)} % from Settings, so incline cannot be set`}
+                            {settings.maxInclinePercent !== null && inclineRange &&
+                              (!info?.inclinationRange || inclineRange.max < info.inclinationRange.max) &&
+                              `, max ${inclineRange.max.toFixed(1)} from Settings`}
                             {unannounced('Inclination Target') && ', not advertised by the console'}
                           </span>
                         </div>
@@ -702,7 +781,7 @@ export function App() {
                           {presets.inclinesPercent.map((preset, index) => (
                             <button
                               key={`incline-${index}`}
-                              disabled={outOfRange(preset, info?.inclinationRange)}
+                              disabled={outOfRange(preset, inclineRange)}
                               onClick={() => applyIncline(preset)}
                             >
                               {formatPreset(preset)}
@@ -737,7 +816,7 @@ export function App() {
                         </button>
                       </div>
                     ) : (
-                      <button className="big primary" onClick={() => void startBelt()}>
+                      <button className="big primary" disabled={isRunActive(run)} onClick={() => void startBelt()}>
                         START AT {lowestSpeed.toFixed(1)} KM/H
                       </button>
                     )}
@@ -895,6 +974,13 @@ export function App() {
 
             <Capabilities info={info} dump={dump} seenFlags={seenFlags} framesSeen={framesSeen} data={data} />
           </>
+        )}
+
+        {tab === 'plans' && (
+          <Plans model={plansModel} run={run} canPlay={canPlay} playDisabledReason={playDisabledReason}
+            targetsFor={phase === 'connected' ? targetsFor : null} maxInclinePercent={settings.maxInclinePercent}
+            onPlay={playPlan} onEndPlan={() => runner.end('endPlan')} onRetry={retryPhase}
+            onSave={savePlan} onDismiss={runner.dismiss} />
         )}
 
         {tab === 'stats' && <Stats stats={stats} weightKg={settings.profile.weightKg} />}

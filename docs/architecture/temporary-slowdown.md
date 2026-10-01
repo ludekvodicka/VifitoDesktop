@@ -24,6 +24,23 @@ the belt and therefore does not implement this behavior. No start command is sen
 - Each toggle has a request token. Clearing slowdown invalidates the token, preventing a late
   response from reinstating state after STOP or disconnect. A command already sent cannot be recalled.
 
+## During a plan run
+
+Slowdown holds the plan timer when requested, before waiting for the console's answer. This prevents
+a phase boundary from sending its speed while the slowdown request is still pending. The hold keeps
+the remaining phase time; the belt continues moving at 1 km/h after the console accepts Slowdown.
+
+A refused slowdown releases the hold. An accepted restore continues the timer from its remaining
+time, while a refused restore leaves it held. A manual speed choice clears the saved resume speed
+and continues the plan at the chosen speed until the next phase. Changing incline keeps the hold.
+Resuming the timer itself sends no phase targets.
+
+Saving edits while held updates the saved plan and adjusts the remaining time by any duration
+change, but sends no targets. The saved speed and incline apply when the next phase is reached.
+STOP, a confirmed stationary belt and either kind of disconnect end the run before clearing
+Slowdown, so clearing it cannot resume an ended run. See [Training plans](training-plans.md) for the
+run states and consent boundary.
+
 ## Entry points
 
 - `src/renderer/App.tsx`: toggle state, acknowledgement handling, cancellation and the buttons.

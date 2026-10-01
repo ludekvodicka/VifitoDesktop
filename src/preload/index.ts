@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { Plan, PlansSnapshot } from '../shared/plans'
 import type { AppSettings } from '../shared/settings'
 import type { DaySummary, Sample, StatsOverview } from '../shared/stats'
 import type { UpdateState } from '../shared/update'
@@ -38,6 +39,15 @@ const api = {
   /** Returns what was actually stored, which is the normalized version of what was sent. */
   saveSettings(settings: AppSettings): Promise<AppSettings> {
     return ipcRenderer.invoke('settings:set', settings)
+  },
+  getPlans(): Promise<PlansSnapshot> {
+    return ipcRenderer.invoke('plans:list')
+  },
+  savePlan(plan: Plan): Promise<Plan[]> {
+    return ipcRenderer.invoke('plans:upsert', plan)
+  },
+  deletePlan(id: string): Promise<Plan[]> {
+    return ipcRenderer.invoke('plans:remove', id)
   },
   getVersion(): Promise<string> {
     return ipcRenderer.invoke('app:version')

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { dataDir } from './paths'
+import { createPlansStore } from './plans-store'
 import { appendSamples } from './session-log'
 import { readSettings, writeSettings } from './settings'
 import { createStatsStore } from './stats-store'
@@ -12,6 +13,7 @@ import { checkForUpdates, getUpdateState, installUpdate, startAutoUpdates } from
 let pickDevice: ((deviceId: string) => void) | null = null
 
 const stats = createStatsStore(dataDir())
+const plansStore = createPlansStore(dataDir())
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -24,6 +26,8 @@ function createWindow(): void {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
+      // Plan phase timers must keep running while the window is minimized.
+      backgroundThrottling: false,
     },
   })
 
@@ -85,6 +89,12 @@ ipcMain.handle('diag:save-gatt-dump', async (_event, dump: unknown) => {
 ipcMain.handle('settings:get', async () => readSettings())
 
 ipcMain.handle('settings:set', async (_event, settings: unknown) => writeSettings(settings))
+
+ipcMain.handle('plans:list', async () => plansStore.list())
+
+ipcMain.handle('plans:upsert', async (_event, plan: unknown) => plansStore.upsert(plan))
+
+ipcMain.handle('plans:remove', async (_event, id: unknown) => plansStore.remove(id))
 
 ipcMain.handle('app:version', async () => app.getVersion())
 
