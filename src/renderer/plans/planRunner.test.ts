@@ -358,6 +358,26 @@ describe('plan runner failure and hold', () => {
 })
 
 describe('plan runner saved changes', () => {
+  it('keeps the active phase and deadline after reordering, then follows the saved order', async () => {
+    const { runner, sent, state, acceptPhase } = setup()
+    const cooldown: PlanPhase = { id: 'cooldown', name: 'Cool down', speedKmh: 1, inclinePercent: 0, durationSec: 15 }
+    await runner.play({ ...plan, phases: [...plan.phases, cooldown] }, true)
+    await acceptPhase()
+    await vi.advanceTimersByTimeAsync(5000)
+    const saved = { ...plan, phases: [plan.phases[1], plan.phases[0], cooldown] }
+    runner.planSaved(saved)
+    expect(state()).toEqual({ kind: 'running', plan: saved, phaseId: 'warmup', phaseEndsAt: 30_000 })
+    expect(sent).toEqual([[...encodeSetSpeed(2)], [...encodeSetIncline(12)]])
+    await vi.advanceTimersByTimeAsync(24_999)
+    expect(sent).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(state()).toMatchObject({ kind: 'running', phaseId: 'cooldown', phaseEndsAt: 45_000 })
+    await acceptPhase()
+    expect(sent.slice(2)).toEqual([[...encodeSetSpeed(1)], [...encodeSetIncline(0)]])
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(state()).toMatchObject({ kind: 'finished' })
+  })
+
   it.each([{ speedKmh: 4 }, { inclinePercent: 7 }])('sends only speed on Save when no incline is allowed: %j', async (changes) => {
     const { runner, deps, sent, state, answer } = setup()
     deps.targetsFor.mockImplementation((phase) => ({ speedKmh: phase.speedKmh, inclinePercent: null }))

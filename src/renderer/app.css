@@ -630,6 +630,15 @@ button.play:hover:not(:disabled) {
   min-width: 100px;
 }
 
+.plan-phase-order {
+  display: flex;
+  gap: 4px;
+}
+
+.plan-phase-order button {
+  padding: 6px 9px;
+}
+
 .plan-phase-field {
   display: flex;
   align-items: center;

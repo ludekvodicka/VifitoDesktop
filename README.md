@@ -31,8 +31,9 @@ Simulated walking data with Slowdown active at 1 km/h and a saved speed of 5.2 k
 ### Training plans
 
 Create named, colored plans on the **Plans** tab. Each phase has a speed, an incline and a duration
-in minutes and seconds, plus an optional name. **Play** runs the saved plan, one phase at a time,
-and marks the active phase in blue. Only one plan can run at a time.
+in minutes and seconds, plus an optional name. Use the **↑ / ↓** buttons beside a phase to change
+its position, then **Save changes** to keep the new order. **Play** runs the saved plan, one phase
+at a time, and marks the active phase in blue. Only one plan can run at a time.
 
 The run strip stays visible on every tab with the current phase, its countdown, the total time
 remaining, **End plan** and **STOP**. The last phase stops the belt and shows a **Finished** medal

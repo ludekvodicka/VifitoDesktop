@@ -97,6 +97,13 @@ Changing a duration shifts the phase deadline by the difference, preserving time
 If the new deadline has passed, the runner advances immediately. Name-only changes send nothing.
 Later phases use the latest saved values when reached.
 
+The editor's up/down buttons move a phase one position within the draft, preserving its id and
+all field values. The first phase cannot move up and the last cannot move down. Save changes
+persists the order; Discard restores the saved order. Reordering alone sends no treadmill commands.
+During a run, the active phase stays selected by id and keeps its remaining time. After saving,
+the runner continues with the phase following it in the new order. Phases moved before the active
+phase are skipped for this run; previously completed phases moved after it can run again.
+
 During `starting`, a save updates the first phase used after Start succeeds. During `held` or
 `failed`, a save updates the plan and remaining time but sends nothing. Resuming a hold sends no
 phase targets; Retry sends the latest targets if time remains, otherwise it advances. Removing the

@@ -108,6 +108,15 @@ function PlanBox({ plan, model, run, canPlay, playDisabledReason, targetsFor, ma
     phases: previous.phases.map((phase) => phase.id === id ? { ...phase, [field]: value } : phase),
   }))
 
+  const movePhase = (id: string, offset: -1 | 1) => model.edit(plan.id, (previous) => {
+    const index = previous.phases.findIndex((phase) => phase.id === id)
+    const destination = index + offset
+    if (index < 0 || destination < 0 || destination >= previous.phases.length) return previous
+    const phases = [...previous.phases]
+    phases.splice(destination, 0, ...phases.splice(index, 1))
+    return { ...previous, phases }
+  })
+
   const remove = async () => {
     if (live || pending) return
     if (mine && (run.kind === 'finished' || run.kind === 'ended')) onDismiss()
@@ -186,6 +195,12 @@ function PlanBox({ plan, model, run, canPlay, playDisabledReason, targetsFor, ma
             )
             return (
               <div key={phase.id} className={`settings-row plan-phase${active ? ' active' : ''}`}>
+                <div className="plan-phase-order">
+                  <button type="button" disabled={index === 0} aria-label={`Move phase ${index + 1} up`}
+                    title="Move phase up" onClick={() => movePhase(phase.id, -1)}>↑</button>
+                  <button type="button" disabled={index === draft.phases.length - 1} aria-label={`Move phase ${index + 1} down`}
+                    title="Move phase down" onClick={() => movePhase(phase.id, 1)}>↓</button>
+                </div>
                 <input className="plan-phase-name" aria-label={`Phase ${index + 1} name`} maxLength={PLAN_LIMITS.phaseNameLength}
                   value={phase.name} placeholder={phaseLabel('', index)} onChange={(event) => editPhase(phase.id, 'name', event.target.value)} />
                 {numberInput('speedKmh', 'km/h', PLAN_LIMITS.speedKmh.min, PLAN_LIMITS.speedKmh.max, 0.1)}
