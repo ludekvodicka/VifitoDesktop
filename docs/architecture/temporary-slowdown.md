@@ -7,8 +7,10 @@ and remembers the previous displayed target, falling back to reported speed when
 After the console accepts the command, the button shows a pause icon and the saved resume speed.
 A second click restores that speed through Set Target Speed. Incline is unchanged.
 
-This uses speed control because the belt must keep moving at 1 km/h. The FTMS pause command stops
-the belt and therefore does not implement this behavior. No start command is sent by Slowdown.
+This uses speed control to keep the belt moving at 1 km/h. The FTMS pause command stops
+the belt and therefore does not implement this behavior. Entering Slowdown sends no Start.
+If the belt becomes stationary during the pause, Resume first starts it at the lowest supported
+speed, then restores the saved speed. Both commands must be accepted before the plan timer continues.
 
 ## State and constraints
 
@@ -17,8 +19,10 @@ the belt and therefore does not implement this behavior. No start command is sen
 - While awaiting a response, Slowdown and the speed controls are disabled. STOP stays available.
 - A refusal or communication failure leaves the previous target and resume state unchanged so the
   user can retry. The existing Control message shows the error.
-- STOP, a confirmed stationary belt, manual speed selection, and either kind of disconnect clear
-  the saved speed. Changing incline preserves it.
+- STOP, manual speed selection, and either kind of disconnect clear the saved speed. Zero speed
+  during Slowdown preserves it and keeps Resume available. Changing incline preserves it.
+- Manual speed controls stay disabled while a paused belt is stationary; Resume handles the
+  lowest-speed-first Start sequence before restoring the saved speed.
 - Pending speed stepper clicks are cancelled before toggling. Commands already submitted use the
   existing serialized Control Point queue, whose STOP cancels commands still waiting to be sent.
 - Each toggle has a request token. Clearing slowdown invalidates the token, preventing a late
@@ -37,8 +41,10 @@ Resuming the timer itself sends no phase targets.
 
 Saving edits while held updates the saved plan and adjusts the remaining time by any duration
 change, but sends no targets. The saved speed and incline apply when the next phase is reached.
-STOP, a confirmed stationary belt and either kind of disconnect end the run before clearing
-Slowdown, so clearing it cannot resume an ended run. See [Training plans](training-plans.md) for the
+Zero speed during Slowdown keeps the current phase and remaining time, including through a refused
+Start or speed restore. STOP and either kind of disconnect end the run before clearing
+Slowdown, so clearing it cannot resume an ended run. Outside Slowdown a confirmed stationary belt
+still ends the run. See [Training plans](training-plans.md) for the
 run states and consent boundary.
 
 ## Entry points

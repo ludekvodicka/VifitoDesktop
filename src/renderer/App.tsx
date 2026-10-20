@@ -142,6 +142,7 @@ export function App() {
   const [targetIncline, setTargetIncline] = useState<number | null>(null)
   const [resumeSpeed, setResumeSpeed] = useState<number | null>(null)
   const [slowdownPending, setSlowdownPending] = useState(false)
+  const slowdownActive = resumeSpeed !== null || slowdownPending
   /** Drives which of the two big buttons is shown, see the hysteresis effect below. */
   const [running, setRunning] = useState(false)
 
@@ -279,17 +280,20 @@ export function App() {
     const observed = speed > 0
     if (observed === running) {
       disagreeSinceRef.current = null
+      // A refused slowdown can release the hold after zero speed has already settled.
+      if (!observed && !slowdownActive && run.kind !== 'starting') runner.end('beltStopped')
       return
     }
     const now = Date.now()
     if (disagreeSinceRef.current === null) disagreeSinceRef.current = now
     else if (now - disagreeSinceRef.current >= BELT_STATE_SETTLE_MS) {
-      if (!observed) runner.end('beltStopped')
+      // Zero speed during an intentional pause must not discard the phase or its remainder.
+      if (!observed && !slowdownActive) runner.end('beltStopped')
       disagreeSinceRef.current = null
       setRunning(observed)
-      if (!observed) clearSlowdown()
+      if (!observed && !slowdownActive) clearSlowdown()
     }
-  }, [data, running, clearSlowdown, runner])
+  }, [data, running, slowdownActive, run.kind, clearSlowdown, runner])
 
   const setBeltState = useCallback((next: boolean) => {
     disagreeSinceRef.current = null
@@ -454,6 +458,8 @@ export function App() {
     inclinePercent: inclineRange === null ? null : quantize(planPhase.inclinePercent, inclineRange, INCLINE_STEP),
   })
   const canSlowdown = shownSpeed > 1 && quantize(1, info?.speedRange, SPEED_STEP) === 1
+  const pausedBeltStopped = resumeSpeed !== null && (!running || data?.speedKmh === 0)
+  const speedControlsDisabled = slowdownPending || pausedBeltStopped
   // Trust the reported speed when the console sends it. A console that never sends the field would
   // otherwise hide the stop button while the belt runs, so there the app's own start decides.
   // A console that reports no target is not necessarily unable to obey one; cheap consoles get their
@@ -462,7 +468,7 @@ export function App() {
     info?.features !== undefined && !info.features.targets.includes(target)
 
   const nudgeSpeed = (direction: number) => {
-    if (slowdownRequestRef.current) return
+    if (slowdownRequestRef.current || speedControlsDisabled) return
     clearSlowdown()
     const next = quantize(shownSpeed + direction * SPEED_STEP, info?.speedRange, SPEED_STEP)
     setTargetSpeed(next)
@@ -479,7 +485,7 @@ export function App() {
   // A preset is one decision, so it goes out at once. The 250 ms wait exists for a run of clicks on
   // the steppers, and any such wait still pending would land after the preset and undo it.
   const applySpeed = (value: number) => {
-    if (slowdownRequestRef.current) return
+    if (slowdownRequestRef.current || speedControlsDisabled) return
     clearSlowdown()
     if (speedTimerRef.current) clearTimeout(speedTimerRef.current)
     speedTimerRef.current = null
@@ -489,7 +495,7 @@ export function App() {
   }
 
   const toggleSlowdown = async () => {
-    if (!running || phase !== 'connected' || slowdownRequestRef.current) return
+    if ((!running && resumeSpeed === null) || phase !== 'connected' || slowdownRequestRef.current) return
     if (resumeSpeed === null && !canSlowdown) return
     if (speedTimerRef.current) clearTimeout(speedTimerRef.current)
     speedTimerRef.current = null
@@ -499,6 +505,15 @@ export function App() {
     const next = resumeSpeed ?? 1
     const slowing = resumeSpeed === null
     if (slowing) runner.hold()
+    if (pausedBeltStopped) {
+      const started = await startBelt()
+      if (slowdownRequestRef.current !== request) return
+      if (!started) {
+        slowdownRequestRef.current = null
+        setSlowdownPending(false)
+        return
+      }
+    }
     const accepted = await runCommand(encodeSetSpeed(next))
     // Stop or disconnect invalidates the request even if the console accepts it afterwards.
     if (slowdownRequestRef.current !== request) return
@@ -723,12 +738,12 @@ export function App() {
                       <div className="control-steppers">
                         <div className="control-row">
                           <span className="control-label">Speed</span>
-                          <button disabled={slowdownPending} onClick={() => nudgeSpeed(-1)}>−</button>
+                          <button disabled={speedControlsDisabled} onClick={() => nudgeSpeed(-1)}>−</button>
                           <span className="control-value">
                             {shownSpeed.toFixed(1)}
                             <span className="unit">km/h</span>
                           </span>
-                          <button disabled={slowdownPending} onClick={() => nudgeSpeed(1)}>+</button>
+                          <button disabled={speedControlsDisabled} onClick={() => nudgeSpeed(1)}>+</button>
                           <span className="control-note">
                             steps of {SPEED_STEP}
                             {info?.speedRange
@@ -767,7 +782,7 @@ export function App() {
                           {presets.speedsKmh.map((preset, index) => (
                             <button
                               key={`speed-${index}`}
-                              disabled={slowdownPending || outOfRange(preset, info?.speedRange)}
+                              disabled={speedControlsDisabled || outOfRange(preset, info?.speedRange)}
                               onClick={() => applySpeed(preset)}
                             >
                               {formatPreset(preset)}
@@ -792,7 +807,7 @@ export function App() {
                       </div>
                     </div>
 
-                    {running ? (
+                    {running || slowdownActive ? (
                       <div className="belt-actions">
                         <button className="big stop" onClick={() => void stopBelt()}>
                           STOP

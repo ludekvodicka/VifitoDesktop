@@ -14,8 +14,8 @@ uses the existing lowest-speed-first Start path before sending phase targets. Co
 lazily through the existing serialized FTMS Control Point channel.
 
 Outside that run, commands require a user action. Connecting, reconnecting, loading plans and app
-startup send no control commands. STOP, End plan, a disconnect, a confirmed stationary belt and
-closing the app end the run. No run is persisted or resumed on reconnect. End plan and closing the
+startup send no control commands. STOP, End plan, a disconnect, a confirmed stationary belt outside
+Slowdown and closing the app end the run. No run is persisted or resumed on reconnect. End plan and closing the
 app send no Stop and leave the last speed and incline in effect.
 
 The run strip appears under the navigation on every tab. It shows the plan, current phase, phase
@@ -46,7 +46,7 @@ start a plan with no phases. Dismissing a finished or ended result returns to `i
 | `endPlan` | The user clicks End plan. |
 | `stop` | The user clicks STOP. |
 | `disconnected` | A manual disconnect or a lost Bluetooth connection. |
-| `beltStopped` | Reported belt speed stays stationary through the existing 2.5-second hysteresis. |
+| `beltStopped` | Outside Slowdown, reported belt speed stays stationary through the existing 2.5-second hysteresis. |
 | `startRefused` | The lowest-speed-first Start path does not succeed. |
 | `phaseRemoved` | A saved plan no longer contains the active phase, or has no first phase after Start. |
 
@@ -118,6 +118,13 @@ refused slowdown or an accepted restore continues the timer. A refused restore l
 Choosing a manual speed clears Slowdown and continues the timer; changing incline preserves the
 hold. See [Temporary slowdown](temporary-slowdown.md#during-a-plan-run).
 
+If the belt reports zero speed during Slowdown, the run remains held with its current phase and
+remaining time. Resume stays available. If the belt is stationary when Resume is clicked, it first
+uses the lowest-speed-first Start sequence, then restores the saved speed. The timer stays held
+until both steps succeed. A refused Start or restore preserves the hold for another attempt. Manual
+speed controls are disabled while the paused belt is stationary so they cannot resume just the timer.
+STOP and disconnect still end the run and invalidate a pending resume.
+
 ### Maximum incline
 
 `maxInclinePercent` is an optional setting from 0 to 30%, rounded to 0.1%. Empty means `null`, with
@@ -169,7 +176,9 @@ quarantine preserves the source bytes for recovery; it does not reconstruct the 
 ## Trade-offs
 
 - Console-button changes may be invisible as target changes. The runner does not restore its
-  targets continuously; the next phase sends its own values. A confirmed stationary belt ends it.
+  targets continuously; the next phase sends its own values. A confirmed stationary belt ends it
+  outside Slowdown. During Slowdown, zero speed alone cannot distinguish a pause from a console
+  stop; the plan stays held and sends nothing until the user explicitly resumes or ends it.
 - End plan and closing the app leave the last targets in effect. Stopping the belt requires STOP
   or the console controls; app closure has no confirmation or automatic Stop.
 - A console refusing incline fails the phase even if it accepted speed. The timer stops with an
@@ -180,6 +189,19 @@ quarantine preserves the source bytes for recovery; it does not reconstruct the 
   input, but recovery is manual and the replacement list starts empty.
 
 ## Verification
+
+On 2026-10-20, the pause regression was reproduced through App and the FTMS command channel with
+simulated Bluetooth: zero speed lasting beyond 2.5 seconds during Slowdown removed both the run
+strip and Resume. The fix retains the phase and countdown. The runner regression test covers two
+ten-minute holds in the final phase, an ignored Play while held, and completion after only the
+remaining active time.
+
+`pnpm run check` passed all 344 tests in 14 files, TypeScript, release metadata, the third-party
+inventory and the Electron build. Browser checks covered a hold longer than the phase duration,
+zero-speed preservation, disabled manual speed controls while stationary, refused and delayed
+Start, refused restore, repeated pause/resume, completion, console stop outside Slowdown, STOP
+during a delayed resume, disconnect/reconnect, resume before stop hysteresis settles, and refusal
+of a queued slowdown after the belt has stopped. Physical treadmill behavior was not tested.
 
 On 2026-10-01, `pnpm run check` passed release metadata, the third-party inventory (21 runtime
 packages), TypeScript, all 349 tests in 15 files, and the Electron build. The built renderer passed
@@ -241,6 +263,8 @@ README. The local captures are `.aidocs/screenshots/plans-running-1280x1024.png`
 2. Phases change on time, also with the window minimized.
 3. The incline never passes the maximum.
 4. STOP in the run strip stops at once, also during a phase change.
-5. The console's stop button and safety key end the run; nothing is sent afterwards.
+5. Outside Slowdown, the console's stop button and safety key end the run; nothing is sent afterwards.
 6. The last phase stops the belt; the medal distance is close to the console's distance for the run.
 7. Switching the console off mid-run ends the run; after the reconnect nothing is sent.
+8. During Slowdown, zero speed preserves the phase and countdown. Resume starts a stationary belt
+   at its lowest speed before restoring the saved speed; a refusal leaves the timer paused.

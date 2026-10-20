@@ -16,7 +16,10 @@ and change the incline. Every command is triggered by a click, or belongs to a t
 started with Play. Play authorizes the speed and incline commands of that one run and the Stop at
 its end, and nothing else. A stopped belt goes through the same lowest-speed-first Start sequence
 when Play is clicked. Nothing is sent on connect, on reconnect, or at startup, and a run never
-survives STOP, End plan, a disconnect, a stopped belt or an app restart.
+survives STOP, End plan, a disconnect, a belt stopped outside Slowdown or an app restart.
+Zero speed during Slowdown preserves the paused plan but sends nothing automatically. An explicit
+Resume click starts a stationary belt through the lowest-speed-first sequence and restores the saved
+speed; the plan timer continues only after acceptance.
 
 The following are security issues:
 

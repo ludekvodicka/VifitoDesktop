@@ -44,7 +44,9 @@ Plans stay editable during a run. **Save changes** applies a speed or incline ch
 phase immediately; later phases use their saved values when reached. Manual speed and incline
 choices last until the next phase. **Slowdown** pauses the plan timer while the belt keeps moving
 at 1 km/h. Saving during that hold sends no targets; restoring the saved speed or choosing a manual
-speed continues the timer. If a phase command is refused, the timer pauses and **Retry** sends the
+speed continues the timer. If the belt stops during Slowdown, the phase and remaining time stay
+paused. **Resume** starts at the lowest speed before restoring the saved speed, and continues the
+timer only after the console accepts it. If a phase command is refused, the timer pauses and **Retry** sends the
 phase targets again. **End plan** leaves the belt at its current speed and incline.
 
 ![The Plans tab with a running plan, its active phase and the run strip](docs/screenshot-plans.png)
@@ -96,8 +98,9 @@ Moving a belt from software deserves care, so:
   Inclination when it starts, at each phase boundary, when you click Retry after a refusal, and when
   you save a speed or incline change to the running phase. When the last phase ends, it stops the
   belt. Nothing else is sent on its behalf.
-- **A run ends on STOP, End plan, a disconnect, or a belt stopped on the console** (its stop button
-  or the safety key), and when the app closes. It is never resumed after a reconnect or restored at
+- **A run ends on STOP, End plan, a disconnect, or a belt stopped outside Slowdown**, and when the
+  app closes. Zero speed during Slowdown keeps the plan paused until you resume or end it.
+  It is never resumed after a reconnect or restored at
   startup. End plan and closing the app leave the belt at its current speed and incline.
 - **Control is taken lazily**, on the first command you issue, not when you connect. Some consoles
   lock their own panel once a remote takes over, and just watching the numbers must not do that.
@@ -110,8 +113,10 @@ Moving a belt from software deserves care, so:
   available in the run strip on every tab while a plan is active.
 - **Maximum incline** from Settings caps every incline the app sends. Leave it empty for no extra
   limit. Saving a lower maximum sends nothing; it applies to the next incline command.
-- **Slowdown keeps the belt moving at 1 km/h.** Click it again to restore the saved speed. Stop,
-  disconnecting, or choosing another speed clears the saved speed. It is available above 1 km/h
+- **Slowdown sets the belt to 1 km/h.** Click it again to restore the saved speed. Stop,
+  disconnecting, or choosing another speed clears the saved speed. If the paused belt becomes
+  stationary, Resume starts at the lowest speed before restoring it; manual speed controls stay
+  disabled until then. It is available above 1 km/h
   when the console's speed range supports 1 km/h. During a plan it pauses the plan's timer as soon as
   requested. A refused slowdown, an accepted restore, or a manual speed choice continues the timer.
 - The console's own stop button and safety key are unaffected. This app is an extra remote, not a
