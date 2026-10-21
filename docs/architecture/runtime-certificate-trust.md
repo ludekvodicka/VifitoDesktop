@@ -32,6 +32,11 @@ OpenSSL chain verification establishes that the patched application accepts it.
 No application CA override, verification bypass, operating-system trust change or
 unsupported `--use-openssl-ca` option is required.
 
+Vifito 0.7.4 advances to Electron 43.8.3 while retaining this compiled policy.
+Its separate [October runtime assessment](runtime-security-updates.md) records
+the available browser-engine backports and the still-missing Node/V8 fixes.
+Passing the certificate tests does not establish that those other fixes shipped.
+
 ## Release validation
 
 Validate the actual packaged executable and its `app.asar`, with a fresh user-data

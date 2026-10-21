@@ -1,6 +1,6 @@
 {
   "name": "vifito-desktop",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "private": true,
   "type": "module",
   "description": "Desktop app that reads live data from a VIFITO Rio 45 iR treadmill over Bluetooth FTMS and controls its speed and incline",
@@ -47,7 +47,7 @@
     "@types/react-dom": "19.2.3",
     "@types/web-bluetooth": "0.0.21",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "43.8.1",
+    "electron": "43.8.3",
     "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "typescript": "6.0.3",

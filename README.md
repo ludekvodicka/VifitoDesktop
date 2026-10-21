@@ -201,7 +201,7 @@ The app shows five tabs by default:
 
 ## Build from source
 
-Node.js 24 and pnpm 11:
+Node.js 24.22.1 or a later Node.js 24 patch release, and pnpm 11:
 
 ```sh
 pnpm install
