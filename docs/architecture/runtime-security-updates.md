@@ -2,17 +2,58 @@
 
 ## Decision and boundary
 
-Vifito 0.7.4 pins Electron 43.8.3 to receive its published ANGLE, Chromium,
-PDFium, Skia and V8 backports. CI source checks and release builds pin standalone
-Node 24.22.1. These are separate runtimes: rebuilding with a patched Node does
-not replace or repair Electron's embedded Node.
+Vifito 0.7.5 pins stable Electron 45.0.0, advancing from 0.7.4's Electron 43.8.3.
+CI source checks and release builds pin standalone Node 24.22.1. These are
+separate runtimes: rebuilding with a patched Node does not replace or repair
+Electron's embedded Node. Current stable Electron releases can be deployed while
+the outstanding embedded Node fixes remain a separate follow-up.
 
-**The October Node security update is not complete in Electron 43.8.3.** Keep
+**The October Node security update is not complete in Electron 45.0.0.** Keep
 this dependency open until an official Electron release contains the missing
 fixes and its packaged behavior is verified. Do not replace embedded Node or
 patch application built-ins as a substitute for an upstream runtime release.
 
-## Upstream evidence, 2026-10-21
+## Electron 45 compatibility and remaining fixes
+
+[Electron 45.0.0](https://github.com/electron/electron/releases/tag/v45.0.0),
+commit `54f961b44b83e4ece81065ab60a182fd0c38c01e`, is the stable release selected
+for 0.7.5. Its DEPS still selects Node 24.22.0. All 58 Node patches retain the
+compiled CA distrust policy but contain none of the October HTTP, DNS, TLS
+identity, realpath or random-cache fixes assessed below. The exact packaged
+executable still accepts the DNS NUL test and lacks the inspected source guards.
+
+The packaged Electron 45 V8 runtime passes all six upstream escaped-key JSON
+regression cases. That corrects the reproduced JSON behavior from Electron 43;
+it does not establish that the remaining Node fixes are present.
+
+The [44/45 breaking changes](https://www.electronjs.org/docs/latest/breaking-changes)
+were checked against the application and its bundled preload:
+
+- The sandboxed preload uses `contextBridge` and `ipcRenderer`, with no removed
+  `events`, `timers`, `url`, `Buffer` or immediate-timer dependency.
+- There is no renderer clipboard, Node-integrated worker, screen capture,
+  synchronous safe-storage or native-addon dependency to migrate.
+- Mutable settings, plans and history remain outside ASAR. The application does
+  not pass ASAR file descriptors to native code; the existing updater remains
+  an external packaged dependency.
+- Release targets remain Windows x64, Linux x64 and macOS arm64. Removed 32-bit
+  platforms are not release targets. `electron-builder.yml` declares macOS 13.0
+  as the minimum, matching Electron's Ventura requirement and the README.
+
+No application or shared-updater implementation change is required. The
+dependency lock and exact release-age exception select Electron 45.0.0; pnpm
+remains 11.15.1. Shared sources stay at the revisions used for validation.
+
+The Windows x64 0.7.5 candidate passed all 344 tests, type/version/inventory
+checks, packaging and updater-feed validation. Its executable reports Chromium
+156.0.8078.48, V8 15.6.75.19-electron.0 and embedded Node 24.22.0. The final
+isolated packaged CA run at 2026-10-21 15:36:50 UTC passed 60 certificate
+rejections and 10 valid controls across all five clients, including the actual
+updater executor. Earlier network denials and 10-second request timeouts remain
+inconclusive; the final run used a 30-second request deadline with unchanged
+application bytes, firewall and trust settings.
+
+## Electron 43 assessment, 2026-10-21
 
 [Node 24.22.1](https://github.com/nodejs/node/releases/tag/v24.22.1),
 [22.23.4](https://github.com/nodejs/node/releases/tag/v22.23.4) and
@@ -77,7 +118,7 @@ Node OpenSSL 3.5.9 upgrade is not an Electron OpenSSL replacement. Embedded c-ar
   or the Windows package. `resources/elevate.exe` is the updater elevation helper.
 - No shared updater source, BLE behavior or application data format changes.
 
-## Validation and remaining dependency
+## Validation of 0.7.4 and remaining dependency
 
 The Windows x64 0.7.4 candidate passed all 344 tests, types, version and
 third-party checks, production build, packaging and updater-feed validation.

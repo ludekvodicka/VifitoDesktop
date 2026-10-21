@@ -37,6 +37,11 @@ Its separate [October runtime assessment](runtime-security-updates.md) records
 the available browser-engine backports and the still-missing Node/V8 fixes.
 Passing the certificate tests does not establish that those other fixes shipped.
 
+Vifito 0.7.5 advances to stable Electron 45.0.0 with the same upstream compiled
+CA blocklist. Its packaged runtime and five-client CA checks are independent of
+the earlier 0.7.3 and 0.7.4 receipts. The remaining October Node fixes stay a
+separate follow-up; Electron 45 passes the previously failing V8 JSON regression.
+
 ## Release validation
 
 Validate the actual packaged executable and its `app.asar`, with a fresh user-data

@@ -163,7 +163,7 @@ certutil -hashfile Vifito-Desktop-Setup-0.1.0-x64.exe SHA256   # Windows
   signals; `Portable` is a single executable you update by replacing. SmartScreen will warn about an
   unknown publisher.
 - **Linux** - `AppImage` or `.deb`. BlueZ has to be running.
-- **macOS** - `.dmg`, unsigned, so Gatekeeper will refuse the first launch until you allow it in
+- **macOS 13 (Ventura) or later** - `.dmg`, unsigned, so Gatekeeper will refuse the first launch until you allow it in
   System Settings. macOS asks for Bluetooth permission on first connect. Updates are manual.
 
 ## Use it

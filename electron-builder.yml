@@ -38,6 +38,7 @@ portable:
   artifactName: "Vifito-Desktop-Portable-${version}-${arch}.${ext}"
 mac:
   icon: buildResources/icon.png
+  minimumSystemVersion: '13.0'
   category: public.app-category.healthcare-fitness
   identity: null
   # Without this key macOS denies Bluetooth without even showing a prompt.
